@@ -586,7 +586,9 @@ async function downloadFolderZip(_, folderName) {
     execFileSync('powershell', ['-NoProfile', '-Command', `Compress-Archive -Path "${baseDir}" -DestinationPath "${zipPath}" -Force`], { timeout: 120000, windowsHide: true })
   } catch { throw new Error('Failed to create ZIP') }
 
-  const savePath = (await dialog.showSaveDialog(win, { defaultPath: `${folderName}.zip`, filters: [{ name: 'ZIP', extensions: ['zip'] } })).filePath
+  const zipName = folderName + '.zip'
+  const saveResult = await dialog.showSaveDialog(win, { defaultPath: zipName, filters: [{ name: 'ZIP', extensions: ['zip'] }] })
+  const savePath = saveResult.filePath
   if (!savePath) return null
   fs.copyFileSync(zipPath, savePath)
   return true
