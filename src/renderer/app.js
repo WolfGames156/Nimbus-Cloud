@@ -45,9 +45,10 @@ async function call(fn, target) {
 function fileIcon(file) {
   if (file.type && file.type.startsWith('image/')) {
     const name = encodeURIComponent(file.name)
-    const cached = thumbCache[name]
-    if (cached) return `<div class="thumb image-thumb" data-name="${name}"><img src="${cached}"></div>`
-    return `<div class="thumb image-thumb" data-name="${name}"><span>${ext(file.name)}</span></div>`
+    const folder = encodeURIComponent(file.folder || '')
+    const cached = thumbCache[name + '|' + (file.folder || '')]
+    if (cached) return `<div class="thumb image-thumb" data-name="${name}" data-folder="${folder}"><img src="${cached}"></div>`
+    return `<div class="thumb image-thumb" data-name="${name}" data-folder="${folder}"><span>${ext(file.name)}</span></div>`
   }
   return `<div class="thumb"><span>${ext(file.name)}</span></div>`
 }
@@ -197,14 +198,15 @@ async function moveFileToUp(event) {
 async function hydrateThumbs() {
   for (const el of document.querySelectorAll('.image-thumb')) {
     const name = el.dataset.name
-    if (thumbCache[name]) {
-      if (!el.querySelector('img')) el.innerHTML = `<img src="${thumbCache[name]}">`
+    const folder = el.dataset.folder || ''
+    if (thumbCache[name + '|' + folder]) {
+      if (!el.querySelector('img')) el.innerHTML = `<img src="${thumbCache[name + '|' + folder]}">`
       continue
     }
-    const result = await call(() => window.nimbus.preview({ filename: decodeURIComponent(name), folder: '' }), null)
+    const result = await call(() => window.nimbus.preview({ filename: decodeURIComponent(name), folder }), null)
     if (result && result.path) {
       const src = `file:///${result.path.replaceAll('\\\\', '/').replaceAll('\\', '/')}`
-      thumbCache[name] = src
+      thumbCache[name + '|' + folder] = src
       saveThumbCache()
       el.innerHTML = `<img src="${src}">`
     }
@@ -560,6 +562,12 @@ window.nimbus.onOAuthToken(async (token) => {
     await call(() => window.nimbus.setOAuthToken({ token, username }), null)
     showApp(username)
   }
+})
+
+window.nimbus.onShareLink(async (data) => {
+  showToast('Downloading shared file...')
+  const result = await call(() => window.nimbus.downloadFolderZip(data.shareId), null)
+  hideToast()
 })
 
 async function init() {

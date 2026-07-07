@@ -343,6 +343,18 @@ async function uploadPaths(_, filePaths, folder = '') {
     db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename && (f.folder || '') === folder))
     db.files.push({ username: s.username, filename, folder, size: stat.size, sha256: manifest.sha256, type: manifest.type, manifestAssetId: asset.id, createdAt: Date.now() })
   }
+  // Auto-create folder entries in DB
+  if (folder) {
+    if (!db.folders) db.folders = []
+    const parts = folder.split('/')
+    for (let i = 0; i < parts.length; i++) {
+      const name = parts[i]
+      const parent = parts.slice(0, i).join('/')
+      if (!db.folders.some(f => f.username === s.username && f.name === name && (f.parent || '') === parent)) {
+        db.folders.push({ username: s.username, name, parent, createdAt: Date.now() })
+      }
+    }
+  }
   await saveDb(s.owner, db)
   return listFiles()
 }
@@ -656,7 +668,7 @@ async function generateShareLink(_, { filename, folder, isFolder }) {
   const metaAssetName = `share-${shareId}.meta.json`
   await uploadAsset(s.owner, shareRel, metaPath, metaAssetName, REPO)
 
-  return `https://nimbus-gitcloud.vercel.app/share/${shareId}`
+  return `nimbus://share/${shareId}/${encodeURIComponent(filename + '.zip')}/${s.owner}`
 }
 
 function walkDirectory(dirPath, basePath, result = []) {
@@ -774,6 +786,15 @@ function handleNimbusUrl(urlStr) {
       saveOAuthToken(token, 'github_user')
       initSessionFromToken(token).catch(() => {})
       if (win && !win.isDestroyed()) win.webContents.send('oauth-token', token)
+    }
+    return new Response('<html><body><script>window.close()</script></body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } })
+  }
+  
+  if (filename === 'share') {
+    const parts = url.pathname.split('/').filter(Boolean)
+    if (parts.length >= 1) {
+      const shareId = parts[0]
+      if (win && !win.isDestroyed()) win.webContents.send('share-link', { shareId })
     }
     return new Response('<html><body><script>window.close()</script></body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } })
   }
