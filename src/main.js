@@ -330,7 +330,9 @@ async function pickUpload(_, folder = '') {
 async function uploadPaths(_, filePaths, folder = '') {
   const s = requireSession()
   const db = await loadDb(s.owner)
-  
+  const settings = await getSettings()
+  const concurrency = Math.max(1, Math.min(50, settings.concurrency || 10))
+
   // Find or create blob release with available slots
   let blobTag = BLOB_TAG
   let rel = null
@@ -376,10 +378,8 @@ async function uploadPaths(_, filePaths, folder = '') {
   }
 
   const filesToUpload = filePaths.filter(fp => fs.existsSync(fp) && fs.statSync(fp).isFile())
-  // Upload in parallel batches of 5
-  const batchSize = 5
-  for (let i = 0; i < filesToUpload.length; i += batchSize) {
-    const batch = filesToUpload.slice(i, i + batchSize)
+  for (let i = 0; i < filesToUpload.length; i += concurrency) {
+    const batch = filesToUpload.slice(i, i + concurrency)
     const results = await Promise.all(batch.map(fp => uploadOneFile(fp).catch(e => {
       console.error('Upload error:', e.message)
       return null

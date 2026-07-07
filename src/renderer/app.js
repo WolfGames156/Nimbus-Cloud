@@ -499,6 +499,8 @@ $('backupDown').onclick = () => call(() => window.nimbus.backupDownload())
 $('backupUp').onclick = async () => { const data = await call(() => window.nimbus.backupUpload()); if (data) { render(data); saveFileCache(data) } }
 $('logout').onclick = () => { clearToken(); location.reload() }
 $('settingsTheme').onchange = async () => { document.body.dataset.theme = $('settingsTheme').value; await call(() => window.nimbus.setSettings({ theme: $('settingsTheme').value }), null) }
+$('settingsConcurrency').oninput = () => { $('concurrencyValue').textContent = $('settingsConcurrency').value }
+$('settingsConcurrency').onchange = async () => { await call(() => window.nimbus.setSettings({ concurrency: parseInt($('settingsConcurrency').value) }), null) }
 $('clearCache').onclick = () => { localStorage.removeItem('fileCache'); localStorage.removeItem('thumbCache'); thumbCache = {}; call(() => window.nimbus.clearCache()) }
 $('openCache').onclick = () => call(() => window.nimbus.openCache())
 $('closePreview').onclick = () => $('previewModal').classList.add('hidden')
@@ -586,6 +588,9 @@ async function init() {
     const settings = (rawSettings && typeof rawSettings === 'object' && !Array.isArray(rawSettings)) ? rawSettings : {}
     document.body.dataset.theme = settings.theme || 'Dark'
     $('settingsTheme').value = settings.theme || 'Dark'
+    const concurrency = settings.concurrency || 10
+    $('settingsConcurrency').value = concurrency
+    $('concurrencyValue').textContent = concurrency
     showPage('files')
     if (settings.sidebarClosed) { $('app').classList.add('sidebar-closed'); $('sidebarToggle').classList.add('active') }
     const token = loadToken()
