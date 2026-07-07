@@ -405,24 +405,31 @@ async function downloadNamed(_, { filename, folder, preview = false }) {
 
 async function zipAndUpload(_, { paths, folder }) {
   const s = requireSession()
-  const REPO = require('./config').REPO
-  const uploadList = []
+  let allFiles = []
   for (const fp of paths) {
     if (!fs.existsSync(fp)) continue
     const stat = fs.statSync(fp)
     if (stat.isDirectory()) {
-      const folderName = path.basename(fp)
-      const zipPath = path.join(os.tmpdir(), `nimbus-zip-${Date.now()}-${folderName}.zip`)
-      try {
-        execFileSync('powershell', ['-NoProfile', '-Command', `Compress-Archive -Path "${fp}" -DestinationPath "${zipPath}" -Force`], { timeout: 120000, windowsHide: true })
-        if (fs.existsSync(zipPath)) uploadList.push(zipPath)
-      } catch (e) { continue }
+      const entries = walkDirectory(fp, fp)
+      for (const e of entries) {
+        allFiles.push({ path: e.path, targetFolder: folder ? folder + '/' + path.dirname(e.relative).replace(/\\/g, '/') : path.dirname(e.relative).replace(/\\/g, '/') })
+      }
     } else {
-      uploadList.push(fp)
+      allFiles.push({ path: fp, targetFolder: folder || '' })
     }
   }
-  if (!uploadList.length) return listFiles()
-  return uploadPaths(null, uploadList, folder || '')
+  if (!allFiles.length) return listFiles()
+  const uploadGroups = {}
+  for (const f of allFiles) {
+    const key = f.targetFolder || ''
+    if (!uploadGroups[key]) uploadGroups[key] = []
+    uploadGroups[key].push(f.path)
+  }
+  let result = null
+  for (const [targetFolder, files] of Object.entries(uploadGroups)) {
+    result = await uploadPaths(null, files, targetFolder)
+  }
+  return result || listFiles()
 }
 
 async function deleteNamed(_, { filename, folder }) {
@@ -489,7 +496,7 @@ async function createFolder(_, folderName) {
   const s = requireSession()
   const db = await loadDb(s.owner)
   if (!db.folders) db.folders = []
-  if (db.folders.some(f => f.username === s.username && f.name === folderName)) throw new Error('Klasor zaten var')
+  if (db.folders.some(f => f.username === s.username && f.name === folderName)) throw new Error('Folder already exists')
   db.folders.push({ username: s.username, name: folderName, parent: '', createdAt: Date.now() })
   await saveDb(s.owner, db)
   return listFiles()
@@ -512,8 +519,8 @@ async function renameFolder(_, { oldName, newName }) {
   const db = await loadDb(s.owner)
   if (!db.folders) db.folders = []
   const folder = db.folders.find(f => f.username === s.username && f.name === oldName && (f.parent || '') === '')
-  if (!folder) throw new Error('Klasor yok')
-  if (db.folders.some(f => f.username === s.username && f.name === newName && (f.parent || '') === '')) throw new Error('Bu isimde klasor zaten var')
+  if (!folder) throw new Error('Folder not found')
+  if (db.folders.some(f => f.username === s.username && f.name === newName && (f.parent || '') === '')) throw new Error('Folder already exists')
   folder.name = newName
   const oldPrefix = oldName
   const newPrefix = newName
@@ -525,6 +532,65 @@ async function renameFolder(_, { oldName, newName }) {
   })
   await saveDb(s.owner, db)
   return listFiles()
+}
+
+async function downloadFolderZip(_, folderName) {
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  const prefix = folderName ? folderName + '/' : ''
+  const files = db.files.filter(f => f.username === s.username && (f.folder || '').startsWith(prefix))
+  if (!files.length) throw new Error('Folder is empty')
+
+  const tmpRoot = path.join(os.tmpdir(), `nimbus-folder-${Date.now()}`)
+  const baseDir = path.join(tmpRoot, folderName)
+  fs.mkdirSync(baseDir, { recursive: true })
+
+  for (const file of files) {
+    const relPath = (file.folder || '').slice(prefix.length - (folderName ? folderName.length + 1 : 0))
+    const fileDir = relPath ? path.join(baseDir, relPath) : baseDir
+    fs.mkdirSync(fileDir, { recursive: true })
+    const manifestPath = path.join(os.tmpdir(), `nimbus-man-${Date.now()}.json`)
+    try {
+      await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
+    } catch { continue }
+    if (fs.existsSync(manifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+      const outFile = path.join(fileDir, manifest.filename)
+      fs.writeFileSync(outFile, '')
+      for (const part of manifest.parts) {
+        const partPath = path.join(os.tmpdir(), `nimbus-part-${Date.now()}-${part.index}.tmp`)
+        try {
+          await downloadAsset(s.owner, part.assetId, partPath)
+          fs.appendFileSync(outFile, fs.readFileSync(partPath))
+        } catch {}
+      }
+    }
+  }
+
+  const zipPath = path.join(os.tmpdir(), `nimbus-dl-${Date.now()}-${folderName}.zip`)
+  try {
+    execFileSync('powershell', ['-NoProfile', '-Command', `Compress-Archive -Path "${baseDir}" -DestinationPath "${zipPath}" -Force`], { timeout: 120000, windowsHide: true })
+  } catch { throw new Error('Failed to create ZIP') }
+
+  const savePath = (await dialog.showSaveDialog(win, { defaultPath: `${folderName}.zip`, filters: [{ name: 'ZIP', extensions: ['zip'] } })).filePath
+  if (!savePath) return null
+  fs.copyFileSync(zipPath, savePath)
+  return true
+}
+
+function walkDirectory(dirPath, basePath, result = []) {
+  if (!fs.existsSync(dirPath)) return result
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name)
+    const relPath = path.relative(basePath, fullPath)
+    if (entry.isDirectory()) {
+      walkDirectory(fullPath, basePath, result)
+    } else if (entry.isFile()) {
+      result.push({ path: fullPath, relative: relPath.replace(/\\/g, '/') })
+    }
+  }
+  return result
 }
 
 async function backupDownload() {
@@ -688,6 +754,7 @@ if (!gotTheLock) {
     safe('create-folder', createFolder)
     safe('delete-folder', deleteFolder)
     safe('rename-folder', renameFolder)
+    safe('download-folder-zip', downloadFolderZip)
     safe('backup-download', backupDownload)
     safe('backup-upload', backupUpload)
     safe('clear-cache', clearCache)
