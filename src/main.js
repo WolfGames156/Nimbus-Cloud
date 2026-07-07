@@ -5,62 +5,17 @@ const path = require('path')
 const crypto = require('crypto')
 const https = require('https')
 const { execFileSync } = require('child_process')
-const { MIRROR_REPOS, DB_TAG, BLOB_TAG, CHUNK_SIZE } = require('./config')
+const { REPO, MIRROR_REPOS, DB_TAG, BLOB_TAG, CHUNK_SIZE } = require('./config')
 
 let win
 let session = null
 let oauthToken = null
 let memoryDb = null
-let syncTimer = null
-let syncDirty = false
 
 function getDataPath() {
   const dir = app.getPath('userData')
   fs.mkdirSync(dir, { recursive: true })
   return dir
-}
-
-function localDbPath() {
-  return path.join(getDataPath(), 'db-cache.json')
-}
-
-function loadLocalDb() {
-  try {
-    const file = localDbPath()
-    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'))
-  } catch {}
-  return null
-}
-
-function saveLocalDb(db) {
-  try { fs.writeFileSync(localDbPath(), JSON.stringify(db, null, 2)) } catch {}
-}
-
-function scheduleSync() {
-  syncDirty = true
-  if (syncTimer) clearTimeout(syncTimer)
-  syncTimer = setTimeout(doSync, 3000)
-}
-
-async function doSync() {
-  if (!syncDirty || !memoryDb || !session) return
-  syncDirty = false
-  try {
-    const tmp = path.join(os.tmpdir(), `nimbus-db-sync-${Date.now()}.json`)
-    fs.writeFileSync(tmp, JSON.stringify(memoryDb, null, 2))
-    const REPO = require('./config').REPO
-    for (const repo of repos()) {
-      try {
-        await ensureRepo(session.owner, repo)
-        const rel = await release(session.owner, DB_TAG, repo)
-        await uploadAsset(session.owner, rel, tmp, 'db.json', repo)
-      } catch (e) {
-        if (repo === REPO) throw e
-      }
-    }
-  } catch (e) {
-    console.error('Sync error:', e.message)
-  }
 }
 
 function tokenPath() {
@@ -142,7 +97,6 @@ async function owner() {
 }
 
 function repos() {
-  const REPO = require('./config').REPO
   return [REPO, ...MIRROR_REPOS]
 }
 
@@ -296,13 +250,8 @@ function hashFile(filePath) {
   return h.digest('hex')
 }
 
-async function loadDb(ownerName, forceRefresh) {
-  if (forceRefresh) memoryDb = null
-  if (memoryDb) return memoryDb
-  
-  // Always try GitHub FIRST on initial load
-  const REPO = require('./config').REPO
-  let lastError = null
+async function loadDb(ownerName, forceRefresh = false) {
+  if (!forceRefresh && memoryDb) return memoryDb
   for (const repo of repos()) {
     try {
       await ensureRepo(ownerName, repo)
@@ -312,28 +261,17 @@ async function loadDb(ownerName, forceRefresh) {
       const tmp = path.join(os.tmpdir(), `nimbus-db-${Date.now()}.json`)
       const ok = await downloadAsset(ownerName, asset.id, tmp, repo)
       if (ok && fs.existsSync(tmp)) {
-        const db = JSON.parse(fs.readFileSync(tmp, 'utf8'))
-        memoryDb = db; saveLocalDb(db); return db
+        memoryDb = JSON.parse(fs.readFileSync(tmp, 'utf8'))
+        return memoryDb
       }
-    } catch (error) { lastError = error }
+    } catch {}
   }
-  
-  // Fallback: local cache
-  const local = loadLocalDb()
-  if (local && local.files) { memoryDb = local; return local }
-  
-  // Empty start
-  if (lastError && !String(lastError.message).includes('404')) throw lastError
   memoryDb = { files: [], folders: [] }
-  saveLocalDb(memoryDb)
   return memoryDb
 }
 
 async function saveDb(ownerName, db) {
   memoryDb = db
-  saveLocalDb(db)
-  // Synchronous GitHub upload
-  const REPO = require('./config').REPO
   const tmp = path.join(os.tmpdir(), `nimbus-db-save-${Date.now()}.json`)
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2))
   for (const repo of repos()) {
@@ -369,7 +307,6 @@ async function pickUpload(_, folder = '') {
 async function uploadPaths(_, filePaths, folder = '') {
   const s = requireSession()
   const db = await loadDb(s.owner)
-  const REPO = require('./config').REPO
   
   // Find or create blob release with available slots
   let blobTag = BLOB_TAG
@@ -481,7 +418,7 @@ async function downloadNamed(_, { filename, folder, preview = false }) {
   const cached = preview ? path.join(targetDir, `${file.sha256}-${filename}`) : null
   if (cached && fs.existsSync(cached) && hashFile(cached) === file.sha256) return { path: cached, type: file.type, name: filename }
   const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
-  const ok = await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
+  const ok = await downloadAsset(s.owner, file.manifestAssetId, manifestPath, REPO)
   if (!ok && preview) return null
   if (!ok) throw new Error('File unavailable')
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
@@ -491,7 +428,7 @@ async function downloadNamed(_, { filename, folder, preview = false }) {
   fs.writeFileSync(out, '')
   for (const part of manifest.parts) {
     const partPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-${part.index}.part`)
-    const partOk = await downloadAsset(s.owner, part.assetId, partPath)
+    const partOk = await downloadAsset(s.owner, part.assetId, partPath, REPO)
     if (!partOk) continue
     fs.appendFileSync(out, fs.readFileSync(partPath))
     done += part.size
@@ -508,9 +445,13 @@ async function zipAndUpload(_, { paths, folder }) {
     if (!fs.existsSync(fp)) continue
     const stat = fs.statSync(fp)
     if (stat.isDirectory()) {
+      const folderName = path.basename(fp)
       const entries = walkDirectory(fp, fp)
       for (const e of entries) {
-        allFiles.push({ path: e.path, targetFolder: folder ? folder + '/' + path.dirname(e.relative).replace(/\\/g, '/') : path.dirname(e.relative).replace(/\\/g, '/') })
+        const dir = path.dirname(e.relative).replace(/\\/g, '/')
+        const subPath = dir === '.' ? '' : '/' + dir
+        const targetFolder = folder ? folder + '/' + folderName + subPath : folderName + subPath
+        allFiles.push({ path: e.path, targetFolder })
       }
     } else {
       allFiles.push({ path: fp, targetFolder: folder || '' })
@@ -537,10 +478,10 @@ async function deleteNamed(_, { filename, folder }) {
   if (!file) throw new Error('Dosya yok')
   const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
   try {
-    await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
+    await downloadAsset(s.owner, file.manifestAssetId, manifestPath, REPO)
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
-    await deleteAsset(s.owner, file.manifestAssetId)
-    for (const part of manifest.parts) await deleteAsset(s.owner, part.assetId)
+    await deleteAsset(s.owner, file.manifestAssetId, REPO)
+    for (const part of manifest.parts) await deleteAsset(s.owner, part.assetId, REPO)
   } catch {}
   db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename && (f.folder || '') === (folder || '')))
   await saveDb(s.owner, db)
@@ -568,10 +509,10 @@ async function bulkDelete(_, filenames) {
     if (!file) continue
     try {
       const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
-      await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
+      await downloadAsset(s.owner, file.manifestAssetId, manifestPath, REPO)
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
-      await deleteAsset(s.owner, file.manifestAssetId)
-      for (const part of manifest.parts) await deleteAsset(s.owner, part.assetId)
+      await deleteAsset(s.owner, file.manifestAssetId, REPO)
+      for (const part of manifest.parts) await deleteAsset(s.owner, part.assetId, REPO)
     } catch {}
     db.files = db.files.filter(f => !(f.username === s.username && f.filename === fname && (f.folder || '') === ffolder))
   }
@@ -648,7 +589,7 @@ async function downloadFolderZip(_, folderName) {
     const fileDir = relPath ? path.join(baseDir, relPath) : baseDir
     fs.mkdirSync(fileDir, { recursive: true })
     const manifestPath = path.join(os.tmpdir(), `nimbus-man-${Date.now()}.json`)
-    const manOk = await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
+    const manOk = await downloadAsset(s.owner, file.manifestAssetId, manifestPath, REPO)
     if (!manOk) continue
     if (fs.existsSync(manifestPath)) {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
@@ -657,7 +598,7 @@ async function downloadFolderZip(_, folderName) {
       for (const part of manifest.parts) {
         const partPath = path.join(os.tmpdir(), `nimbus-part-${Date.now()}-${part.index}.tmp`)
         try {
-          await downloadAsset(s.owner, part.assetId, partPath)
+          await downloadAsset(s.owner, part.assetId, partPath, REPO)
           fs.appendFileSync(outFile, fs.readFileSync(partPath))
         } catch {}
       }
@@ -679,7 +620,6 @@ async function downloadFolderZip(_, folderName) {
 
 async function generateShareLink(_, { filename, folder, isFolder }) {
   const s = requireSession()
-  const REPO = require('./config').REPO
   const db = await loadDb(s.owner)
   const shareId = crypto.randomBytes(8).toString('hex')
   const tmpDir = path.join(os.tmpdir(), `nimbus-share-${shareId}`)
@@ -696,13 +636,13 @@ async function generateShareLink(_, { filename, folder, isFolder }) {
       const fileDir = relPath ? path.join(baseDir, relPath) : baseDir
       fs.mkdirSync(fileDir, { recursive: true })
       const manPath = path.join(os.tmpdir(), `nimbus-man-${Date.now()}.json`)
-      if (!await downloadAsset(s.owner, file.manifestAssetId, manPath)) continue
+      if (!await downloadAsset(s.owner, file.manifestAssetId, manPath, REPO)) continue
       const manifest = JSON.parse(fs.readFileSync(manPath, 'utf8'))
       const outFile = path.join(fileDir, manifest.filename)
       fs.writeFileSync(outFile, '')
       for (const part of manifest.parts) {
         const partPath = path.join(os.tmpdir(), `nimbus-part-${Date.now()}.tmp`)
-        if (await downloadAsset(s.owner, part.assetId, partPath)) {
+        if (await downloadAsset(s.owner, part.assetId, partPath, REPO)) {
           fs.appendFileSync(outFile, fs.readFileSync(partPath))
         }
       }
@@ -712,13 +652,13 @@ async function generateShareLink(_, { filename, folder, isFolder }) {
     const file = db.files.find(f => f.username === s.username && f.filename === filename && (f.folder || '') === (folder || ''))
     if (!file) throw new Error('File not found')
     const manPath = path.join(os.tmpdir(), `nimbus-man-${Date.now()}.json`)
-    if (!await downloadAsset(s.owner, file.manifestAssetId, manPath)) throw new Error('File unavailable')
+    if (!await downloadAsset(s.owner, file.manifestAssetId, manPath, REPO)) throw new Error('File unavailable')
     const manifest = JSON.parse(fs.readFileSync(manPath, 'utf8'))
     const outFile = path.join(tmpDir, manifest.filename)
     fs.writeFileSync(outFile, '')
     for (const part of manifest.parts) {
       const partPath = path.join(os.tmpdir(), `nimbus-part-${Date.now()}.tmp`)
-      if (await downloadAsset(s.owner, part.assetId, partPath)) {
+      if (await downloadAsset(s.owner, part.assetId, partPath, REPO)) {
         fs.appendFileSync(outFile, fs.readFileSync(partPath))
       }
     }
@@ -826,6 +766,12 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   })
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
+  win.on('focus', () => {
+    if (session) {
+      loadDb(session.owner, true).catch(() => {})
+      if (win && !win.isDestroyed()) win.webContents.send('auto-refresh')
+    }
+  })
 }
 
 function safe(channel, handler) {
@@ -930,8 +876,7 @@ if (!gotTheLock) {
     safe('refresh-from-github', async () => {
       const s = requireSession()
       memoryDb = null
-      const db = await loadDb(s.owner, true)
-      saveLocalDb(db)
+      await loadDb(s.owner, true)
       return listFiles()
     })
     safe('download-folder-zip', downloadFolderZip)

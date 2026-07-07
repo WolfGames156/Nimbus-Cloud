@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('nimbus', {
   onProgress: fn => ipcRenderer.on('progress', (_, data) => fn(data)),
   onOAuthToken: fn => ipcRenderer.on('oauth-token', (_, token) => fn(token)),
   onShareLink: fn => ipcRenderer.on('share-link', (_, data) => fn(data)),
+  onAutoRefresh: fn => ipcRenderer.on('auto-refresh', () => fn()),
   winMinimize: () => ipcRenderer.invoke('win-minimize'),
   winMaximize: () => ipcRenderer.invoke('win-maximize'),
   winClose: () => ipcRenderer.invoke('win-close'),

@@ -46,7 +46,8 @@ function fileIcon(file) {
   if (file.type && file.type.startsWith('image/')) {
     const name = encodeURIComponent(file.name)
     const folder = encodeURIComponent(file.folder || '')
-    const cached = thumbCache[name + '|' + (file.folder || '')]
+    const cacheKey = name + '|' + folder
+    const cached = thumbCache[cacheKey]
     if (cached) return `<div class="thumb image-thumb" data-name="${name}" data-folder="${folder}"><img src="${cached}"></div>`
     return `<div class="thumb image-thumb" data-name="${name}" data-folder="${folder}"><span>${ext(file.name)}</span></div>`
   }
@@ -198,15 +199,17 @@ async function moveFileToUp(event) {
 async function hydrateThumbs() {
   for (const el of document.querySelectorAll('.image-thumb')) {
     const name = el.dataset.name
-    const folder = el.dataset.folder || ''
-    if (thumbCache[name + '|' + folder]) {
-      if (!el.querySelector('img')) el.innerHTML = `<img src="${thumbCache[name + '|' + folder]}">`
+    const rawFolder = el.dataset.folder || ''
+    const folder = decodeURIComponent(rawFolder)
+    const cacheKey = name + '|' + rawFolder
+    if (thumbCache[cacheKey]) {
+      if (!el.querySelector('img')) el.innerHTML = `<img src="${thumbCache[cacheKey]}">`
       continue
     }
     const result = await call(() => window.nimbus.preview({ filename: decodeURIComponent(name), folder }), null)
     if (result && result.path) {
       const src = `file:///${result.path.replaceAll('\\\\', '/').replaceAll('\\', '/')}`
-      thumbCache[name + '|' + folder] = src
+      thumbCache[cacheKey] = src
       saveThumbCache()
       el.innerHTML = `<img src="${src}">`
     }
@@ -568,6 +571,11 @@ window.nimbus.onShareLink(async (data) => {
   showToast('Downloading shared file...')
   const result = await call(() => window.nimbus.downloadFolderZip(data.shareId), null)
   hideToast()
+})
+
+window.nimbus.onAutoRefresh(async () => {
+  const data = await call(() => window.nimbus.refreshFromGithub())
+  if (data) { render(data); saveFileCache(data) }
 })
 
 async function init() {

@@ -25,7 +25,7 @@
   --theme-danger: var(--danger);
 }
 
-body[data-theme="Koyu gri"] {
+body[data-theme="Dark gray"] {
   --theme-bg: #1a1a1a; --theme-panel: #262626; --theme-panel-light: #333333;
   --theme-text: #f0f0f0; --theme-muted: #aaaaaa; --theme-line: #4d4d4d;
   --theme-primary-btn-bg: #007bff; --theme-primary-btn-text: #fff;
@@ -53,7 +53,7 @@ body[data-theme="Sunset"] {
   --theme-ghost-btn-bg: #2d2218; --theme-ghost-btn-text: #f5e6d8; --theme-danger: #ef4444;
 }
 
-body[data-theme="Açık"] {
+body[data-theme="Light"] {
   --theme-bg: #f0f2f5; --theme-panel: #ffffff; --theme-panel-light: #f8f9fa;
   --theme-text: #1a1a2e; --theme-muted: #6c757d; --theme-line: #dee2e6;
   --theme-primary-btn-bg: #0d6efd; --theme-primary-btn-text: #fff;
