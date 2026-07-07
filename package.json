@@ -1,0 +1,30 @@
+{
+  "name": "nimbus-cloud",
+  "version": "0.1.0",
+  "description": "Nimbus Cloud desktop app",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "node tools/obfuscate-build.js"
+  },
+  "build": {
+    "appId": "com.nimbus.cloud",
+    "productName": "Nimbus Cloud",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "Nimbus Cloud.exe",
+      "sign": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
+    "javascript-obfuscator": "^4.1.1"
+  }
+}
