@@ -33,7 +33,7 @@ export default function SharePage() {
   }, [user, id])
 
   const downloadUrl = meta
-    ? `https://github.com/${user}/nimbus-shares/releases/download/nimbus-shares/share-${id}.zip`
+    ? `https://github.com/${user}/nimbus-shares/releases/download/nimbus-shares/share-${id}--${encodeURIComponent(meta.filename)}`
     : null
 
   if (loading) {

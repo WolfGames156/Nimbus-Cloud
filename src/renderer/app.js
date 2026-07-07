@@ -567,6 +567,8 @@ window.nimbus.onOAuthToken(async (token) => {
   }
 })
 
+let autoRefreshTimer
+
 window.nimbus.onAutoRefresh(async () => {
   const data = await call(() => window.nimbus.refreshFromGithub())
   if (data) { render(data); saveFileCache(data) }
@@ -574,6 +576,11 @@ window.nimbus.onAutoRefresh(async () => {
 
 async function init() {
   loadThumbCache()
+  // Periodic auto-refresh every 30s
+  autoRefreshTimer = setInterval(async () => {
+    const data = await call(() => window.nimbus.refreshFromGithub())
+    if (data) { render(data); saveFileCache(data) }
+  }, 30000)
   try {
     const rawSettings = await call(() => window.nimbus.getSettings(), null)
     const settings = (rawSettings && typeof rawSettings === 'object' && !Array.isArray(rawSettings)) ? rawSettings : {}

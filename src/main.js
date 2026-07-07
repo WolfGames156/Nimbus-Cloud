@@ -621,12 +621,31 @@ async function downloadFolderZip(_, folderName) {
 async function generateShareLink(_, { filename, folder, isFolder }) {
   const s = requireSession()
   const db = await loadDb(s.owner)
+  const shareRepo = 'nimbus-shares'
+
+  // Check if already shared (same file hash for files, same folder path for folders)
+  if (!db.shares) db.shares = []
+  let existing
+  if (isFolder) {
+    existing = db.shares.find(x => x.filename === filename && x.folder === (folder || '') && x.isFolder)
+  } else {
+    const file = db.files.find(f => f.username === s.username && f.filename === filename && (f.folder || '') === (folder || ''))
+    if (!file) throw new Error('File not found')
+    existing = db.shares.find(x => x.sha256 === file.sha256 && x.isFolder === false)
+  }
+  if (existing) {
+    return `https://nimbus-gitcloud.vercel.app/share/${s.owner}/${existing.shareId}`
+  }
+
   const shareId = crypto.randomBytes(8).toString('hex')
   const tmpDir = path.join(os.tmpdir(), `nimbus-share-${shareId}`)
   fs.mkdirSync(tmpDir, { recursive: true })
-  const zipPath = path.join(os.tmpdir(), `nimbus-share-${shareId}.zip`)
+
+  const isSingleFile = !isFolder
+  let uploadPath, displayName, sha256
 
   if (isFolder) {
+    // Folder: create ZIP
     const prefix = filename ? filename + '/' : ''
     const files = db.files.filter(f => f.username === s.username && (f.folder || '').startsWith(prefix))
     const baseDir = path.join(tmpDir, filename)
@@ -647,54 +666,61 @@ async function generateShareLink(_, { filename, folder, isFolder }) {
         }
       }
     }
+    const zipPath = path.join(os.tmpdir(), `nimbus-share-${shareId}.zip`)
     execFileSync('powershell', ['-NoProfile', '-Command', `Compress-Archive -Path "${baseDir}" -DestinationPath "${zipPath}" -Force`], { timeout: 120000, windowsHide: true })
+    if (!fs.existsSync(zipPath)) throw new Error('Failed to create share archive')
+    sha256 = hashFile(zipPath)
+    uploadPath = zipPath
+    displayName = filename + '.zip'
   } else {
+    // Single file: reassemble and upload raw (no ZIP)
     const file = db.files.find(f => f.username === s.username && f.filename === filename && (f.folder || '') === (folder || ''))
     if (!file) throw new Error('File not found')
+    sha256 = file.sha256
     const manPath = path.join(os.tmpdir(), `nimbus-man-${Date.now()}.json`)
     if (!await downloadAsset(s.owner, file.manifestAssetId, manPath, REPO)) throw new Error('File unavailable')
     const manifest = JSON.parse(fs.readFileSync(manPath, 'utf8'))
-    const outFile = path.join(tmpDir, manifest.filename)
-    fs.writeFileSync(outFile, '')
+    const outPath = path.join(tmpDir, manifest.filename)
+    fs.writeFileSync(outPath, '')
     for (const part of manifest.parts) {
       const partPath = path.join(os.tmpdir(), `nimbus-part-${Date.now()}.tmp`)
       if (await downloadAsset(s.owner, part.assetId, partPath, REPO)) {
-        fs.appendFileSync(outFile, fs.readFileSync(partPath))
+        fs.appendFileSync(outPath, fs.readFileSync(partPath))
       }
     }
-    execFileSync('powershell', ['-NoProfile', '-Command', `Compress-Archive -Path "${outFile}" -DestinationPath "${zipPath}" -Force`], { timeout: 120000, windowsHide: true })
+    uploadPath = outPath
+    displayName = manifest.filename
   }
 
-  if (!fs.existsSync(zipPath)) throw new Error('Failed to create share archive')
-
   // Ensure public nimbus-shares repo
-  const shareRepo = 'nimbus-shares'
   try {
     await gh('GET', `https://api.github.com/repos/${s.owner}/${shareRepo}`)
   } catch {
     await gh('POST', 'https://api.github.com/user/repos', JSON.stringify({ name: shareRepo, private: false, description: 'Nimbus Cloud shared files' }), { 'Content-Type': 'application/json' })
     await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/.nimbuskeep`, JSON.stringify({ message: 'init', content: Buffer.from('Nimbus Shares').toString('base64') }), { 'Content-Type': 'application/json' })
   }
-
-  // EnsureInitialCommit
   try {
     await gh('GET', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/.nimbuskeep`)
   } catch {
     await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/.nimbuskeep`, JSON.stringify({ message: 'init', content: Buffer.from('Nimbus Shares').toString('base64') }), { 'Content-Type': 'application/json' })
   }
 
-  // Upload ZIP as Release asset (no size limit)
+  // Upload as Release asset (no size limit)
   const shareRel = await release(s.owner, 'nimbus-shares', shareRepo)
-  const zipAssetName = `share-${shareId}.zip`
-  await uploadAsset(s.owner, shareRel, zipPath, zipAssetName, shareRepo)
+  const assetName = `share-${shareId}--${encodeURIComponent(displayName)}`
+  await uploadAsset(s.owner, shareRel, uploadPath, assetName, shareRepo)
 
-  // Store metadata as git commit (small file, accessible via raw.githubusercontent.com)
-  const meta = { id: shareId, filename: filename + '.zip', size: fs.statSync(zipPath).size, owner: s.owner, createdAt: Date.now() }
+  // Store metadata as git commit
+  const meta = { id: shareId, filename: displayName, size: fs.statSync(uploadPath).size, owner: s.owner, isFolder, createdAt: Date.now() }
   await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/shares/${shareId}/meta.json`,
     JSON.stringify({ message: `Share ${shareId} metadata`, content: Buffer.from(JSON.stringify(meta, null, 2)).toString('base64') }),
     { 'Content-Type': 'application/json' })
 
-  const downloadUrl = `https://github.com/${s.owner}/${shareRepo}/releases/download/nimbus-shares/${zipAssetName}`
+  // Track in DB
+  db.shares.push({ shareId, filename, folder: folder || '', sha256, isFolder: !!isFolder, createdAt: Date.now() })
+  // Don't await saveDb — fire and forget, disk is secondary here
+  saveDb(s.owner, db).catch(() => {})
+
   return `https://nimbus-gitcloud.vercel.app/share/${s.owner}/${shareId}`
 }
 
@@ -783,10 +809,7 @@ function createWindow() {
   })
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
   win.on('focus', () => {
-    if (session) {
-      loadDb(session.owner, true).catch(() => {})
-      if (win && !win.isDestroyed()) win.webContents.send('auto-refresh')
-    }
+    if (session && win && !win.isDestroyed()) win.webContents.send('auto-refresh')
   })
 }
 
