@@ -247,8 +247,8 @@ function hashFile(filePath) {
 async function loadDb(ownerName, forceRefresh) {
   if (forceRefresh) memoryDb = null
   if (memoryDb) return memoryDb
-  const local = loadLocalDb()
-  if (local && local.files) { memoryDb = local; return local }
+  
+  // Always try GitHub FIRST on initial load
   const REPO = require('./config').REPO
   let lastError = null
   for (const repo of repos()) {
@@ -258,13 +258,19 @@ async function loadDb(ownerName, forceRefresh) {
       const asset = rel.assets.find(a => a.name === 'db.json')
       if (!asset) continue
       const tmp = path.join(os.tmpdir(), `nimbus-db-${Date.now()}.json`)
-      try { await downloadAsset(ownerName, asset.id, tmp, repo) } catch { continue }
-      if (fs.existsSync(tmp)) {
+      const ok = await downloadAsset(ownerName, asset.id, tmp, repo)
+      if (ok && fs.existsSync(tmp)) {
         const db = JSON.parse(fs.readFileSync(tmp, 'utf8'))
         memoryDb = db; saveLocalDb(db); return db
       }
     } catch (error) { lastError = error }
   }
+  
+  // Fallback: local cache
+  const local = loadLocalDb()
+  if (local && local.files) { memoryDb = local; return local }
+  
+  // Empty start
   if (lastError && !String(lastError.message).includes('404')) throw lastError
   memoryDb = { files: [], folders: [] }
   saveLocalDb(memoryDb)
