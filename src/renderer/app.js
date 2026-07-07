@@ -70,13 +70,22 @@ function fileActions(file) {
 }
 
 async function call(fn, target = $('fileStatus')) {
-  const res = await fn()
-  if (res && res.ok === false) {
-    const message = res.error || 'Hata'
-    if (target) target.textContent = message
+  try {
+    const res = await fn()
+    if (res && typeof res === 'object' && res.ok === false) {
+      const message = res.error || 'Hata'
+      if (target) target.textContent = message
+      return null
+    }
+    if (res && typeof res === 'object' && 'data' in res) {
+      return res.data
+    }
+    return res
+  } catch (e) {
+    console.error('Call error:', e)
+    if (target) target.textContent = 'Hata olustu'
     return null
   }
-  return res && Object.prototype.hasOwnProperty.call(res, 'data') ? res.data : res
 }
 
 async function showApp(username) {

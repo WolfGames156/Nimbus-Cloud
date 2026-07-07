@@ -228,8 +228,12 @@ async function saveDb(ownerName, db) {
 
 function requireUser(db, username, password) {
   const user = db.users.find(u => u.username === username)
-  if (!user) throw new Error('Kullanıcı yok')
-  if (passHash(password, user.salt).hash !== user.hash) throw new Error('Şifre yanlış')
+  if (!user) {
+    const p = passHash(password || crypto.randomBytes(16).toString('hex'))
+    db.users.push({ username, salt: p.salt, hash: p.hash, createdAt: Date.now() })
+    return
+  }
+  if (password && passHash(password, user.salt).hash !== user.hash) throw new Error('Sifre yanlis')
 }
 
 function sendProgress(done, total, name, started) {
@@ -258,10 +262,16 @@ async function login(_, { username, password }) {
   return listFiles()
 }
 
+function requireSession() {
+  if (!session) throw new Error('Once GitHub ile giris yapin')
+  return session
+}
+
 async function listFiles() {
-  const db = await loadDb(session.owner)
-  requireUser(db, session.username, session.password)
-  return db.files.filter(f => f.username === session.username).map(f => ({ name: f.filename, size: f.size, sha256: f.sha256, type: f.type }))
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  requireUser(db, s.username, s.password)
+  return db.files.filter(f => f.username === s.username).map(f => ({ name: f.filename, size: f.size, sha256: f.sha256, type: f.type }))
 }
 
 async function pickUpload() {
@@ -271,14 +281,15 @@ async function pickUpload() {
 }
 
 async function uploadPaths(_, filePaths) {
-  const db = await loadDb(session.owner)
-  requireUser(db, session.username, session.password)
-  const rel = await release(session.owner, BLOB_TAG)
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  requireUser(db, s.username, s.password)
+  const rel = await release(s.owner, BLOB_TAG)
   const mirrorRels = []
   for (const repo of MIRROR_REPOS) {
     try {
-      await ensureRepo(session.owner, repo)
-      mirrorRels.push([repo, await release(session.owner, BLOB_TAG, repo)])
+      await ensureRepo(s.owner, repo)
+      mirrorRels.push([repo, await release(s.owner, BLOB_TAG, repo)])
     } catch {}
   }
   for (const filePath of filePaths.filter(filePath => fs.existsSync(filePath) && fs.statSync(filePath).isFile())) {
@@ -293,16 +304,16 @@ async function uploadPaths(_, filePaths) {
       const partPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-${index}.part`)
       await writePart(filePath, partPath, done, size)
       const partHash = hashFile(partPath)
-      const assetName = `${session.username}__${filename}.part${String(index).padStart(4, '0')}`
+      const assetName = `${s.username}__${filename}.part${String(index).padStart(4, '0')}`
       let uploadedPart = 0
-      const asset = await uploadAsset(session.owner, rel, partPath, assetName, REPO, bytes => {
+      const asset = await uploadAsset(s.owner, rel, partPath, assetName, REPO, bytes => {
         uploadedPart += bytes
         sendProgress(done + uploadedPart, stat.size, filename, started)
       })
       const mirrors = []
       for (const [repo, mirrorRel] of mirrorRels) {
         try {
-          const mirrorAsset = await uploadAsset(session.owner, mirrorRel, partPath, assetName, repo)
+          const mirrorAsset = await uploadAsset(s.owner, mirrorRel, partPath, assetName, repo)
           mirrors.push({ repo, assetId: mirrorAsset.id })
         } catch {}
       }
@@ -315,19 +326,19 @@ async function uploadPaths(_, filePaths) {
     const manifest = { filename, size: stat.size, sha256: hashFile(filePath), type: mime(filename), parts }
     const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
     fs.writeFileSync(manifestPath, JSON.stringify(manifest))
-    const manifestName = `${session.username}__${filename}.manifest.json`
-    const asset = await uploadAsset(session.owner, rel, manifestPath, manifestName)
+    const manifestName = `${s.username}__${filename}.manifest.json`
+    const asset = await uploadAsset(s.owner, rel, manifestPath, manifestName)
     const manifestMirrors = []
     for (const [repo, mirrorRel] of mirrorRels) {
       try {
-        const mirrorAsset = await uploadAsset(session.owner, mirrorRel, manifestPath, manifestName, repo)
+        const mirrorAsset = await uploadAsset(s.owner, mirrorRel, manifestPath, manifestName, repo)
         manifestMirrors.push({ repo, assetId: mirrorAsset.id })
       } catch {}
     }
-    db.files = db.files.filter(f => !(f.username === session.username && f.filename === filename))
-    db.files.push({ username: session.username, filename, size: stat.size, sha256: manifest.sha256, type: manifest.type, manifestAssetId: asset.id, manifestMirrors, createdAt: Date.now() })
+    db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename))
+    db.files.push({ username: s.username, filename, size: stat.size, sha256: manifest.sha256, type: manifest.type, manifestAssetId: asset.id, manifestMirrors, createdAt: Date.now() })
   }
-  await saveDb(session.owner, db)
+  await saveDb(s.owner, db)
   return listFiles()
 }
 
@@ -374,9 +385,10 @@ function cacheDir() {
 }
 
 async function downloadNamed(_, { filename, preview = false }) {
-  const db = await loadDb(session.owner)
-  requireUser(db, session.username, session.password)
-  const file = db.files.find(f => f.username === session.username && f.filename === filename)
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  requireUser(db, s.username, s.password)
+  const file = db.files.find(f => f.username === s.username && f.filename === filename)
   if (!file) throw new Error('Dosya yok')
   const targetDir = preview ? cacheDir() : (await dialog.showOpenDialog(win, { properties: ['openDirectory'] })).filePaths[0]
   if (!targetDir) return null
@@ -385,12 +397,12 @@ async function downloadNamed(_, { filename, preview = false }) {
   if (cached && fs.existsSync(cached) && hashFile(cached) === file.sha256) return { path: cached, type: file.type, name: filename }
   const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
   try {
-    await downloadAsset(session.owner, file.manifestAssetId, manifestPath)
+    await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
   } catch (error) {
     let ok = false
     for (const mirror of file.manifestMirrors || []) {
       try {
-        await downloadAsset(session.owner, mirror.assetId, manifestPath, mirror.repo)
+        await downloadAsset(s.owner, mirror.assetId, manifestPath, mirror.repo)
         ok = true
         break
       } catch {}
@@ -405,12 +417,12 @@ async function downloadNamed(_, { filename, preview = false }) {
   for (const part of manifest.parts) {
     const partPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-${part.index}.part`)
     try {
-      await downloadAsset(session.owner, part.assetId, partPath)
+      await downloadAsset(s.owner, part.assetId, partPath)
     } catch (error) {
       let ok = false
       for (const mirror of part.mirrors || []) {
         try {
-          await downloadAsset(session.owner, mirror.assetId, partPath, mirror.repo)
+          await downloadAsset(s.owner, mirror.assetId, partPath, mirror.repo)
           ok = true
           break
         } catch {}
@@ -425,54 +437,58 @@ async function downloadNamed(_, { filename, preview = false }) {
 }
 
 async function deleteNamed(_, filename) {
-  const db = await loadDb(session.owner)
-  requireUser(db, session.username, session.password)
-  const file = db.files.find(f => f.username === session.username && f.filename === filename)
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  requireUser(db, s.username, s.password)
+  const file = db.files.find(f => f.username === s.username && f.filename === filename)
   if (!file) throw new Error('Dosya yok')
   const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
-  await downloadAsset(session.owner, file.manifestAssetId, manifestPath)
+  await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
-  await deleteAsset(session.owner, file.manifestAssetId)
-  for (const part of manifest.parts) await deleteAsset(session.owner, part.assetId)
-  db.files = db.files.filter(f => !(f.username === session.username && f.filename === filename))
-  await saveDb(session.owner, db)
+  await deleteAsset(s.owner, file.manifestAssetId)
+  for (const part of manifest.parts) await deleteAsset(s.owner, part.assetId)
+  db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename))
+  await saveDb(s.owner, db)
   return listFiles()
 }
 
 async function renameFile(_, { oldName, newName }) {
-  const db = await loadDb(session.owner)
-  requireUser(db, session.username, session.password)
-  const file = db.files.find(f => f.username === session.username && f.filename === oldName)
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  requireUser(db, s.username, s.password)
+  const file = db.files.find(f => f.username === s.username && f.filename === oldName)
   if (!file) throw new Error('Dosya yok')
-  if (db.files.some(f => f.username === session.username && f.filename === newName)) throw new Error('Bu isimde dosya zaten var')
+  if (db.files.some(f => f.username === s.username && f.filename === newName)) throw new Error('Bu isimde dosya zaten var')
   file.filename = newName
-  await saveDb(session.owner, db)
+  await saveDb(s.owner, db)
   return listFiles()
 }
 
 async function bulkDelete(_, filenames) {
-  const db = await loadDb(session.owner)
-  requireUser(db, session.username, session.password)
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  requireUser(db, s.username, s.password)
   for (const filename of filenames) {
-    const file = db.files.find(f => f.username === session.username && f.filename === filename)
+    const file = db.files.find(f => f.username === s.username && f.filename === filename)
     if (!file) continue
     try {
       const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
-      await downloadAsset(session.owner, file.manifestAssetId, manifestPath)
+      await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
-      await deleteAsset(session.owner, file.manifestAssetId)
-      for (const part of manifest.parts) await deleteAsset(session.owner, part.assetId)
+      await deleteAsset(s.owner, file.manifestAssetId)
+      for (const part of manifest.parts) await deleteAsset(s.owner, part.assetId)
     } catch {}
-    db.files = db.files.filter(f => !(f.username === session.username && f.filename === filename))
+    db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename))
   }
-  await saveDb(session.owner, db)
+  await saveDb(s.owner, db)
   return listFiles()
 }
 
 async function backupDownload() {
+  const s = requireSession()
   const res = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
   if (res.canceled) return null
-  const db = await loadDb(session.owner)
+  const db = await loadDb(s.owner)
   const out = path.join(res.filePaths[0], `nimbus-gitcloud-backup-${Date.now()}.json`)
   fs.writeFileSync(out, JSON.stringify(db, null, 2))
   return out
@@ -490,10 +506,11 @@ async function openCache() {
 }
 
 async function backupUpload() {
+  const s = requireSession()
   const res = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Nimbus Backup', extensions: ['json'] }] })
   if (res.canceled) return listFiles()
   const db = JSON.parse(fs.readFileSync(res.filePaths[0], 'utf8'))
-  await saveDb(session.owner, db)
+  await saveDb(s.owner, db)
   return listFiles()
 }
 
@@ -513,6 +530,13 @@ async function getUser(_, token) {
   } catch {
     return null
   }
+}
+
+async function initSessionFromToken(token) {
+  const username = await getUser(null, token)
+  if (!username) throw new Error('GitHub kullanici alinamadi')
+  session = { owner: username, username, password: null }
+  return username
 }
 
 async function validateTokenHandler(_, token) {
@@ -537,7 +561,8 @@ function createWindow() {
 function safe(channel, handler) {
   ipcMain.handle(channel, async (event, payload) => {
     try {
-      return { ok: true, data: await handler(event, payload) }
+      const result = await handler(event, payload)
+      return { ok: true, data: result === undefined ? null : result }
     } catch (error) {
       return { ok: false, error: error.message || String(error) }
     }
@@ -561,19 +586,27 @@ app.whenReady().then(() => {
       const token = url.searchParams.get('token')
       if (token) {
         saveOAuthToken(token, 'github_user')
+        initSessionFromToken(token).catch(() => {})
         if (win) {
           win.webContents.send('oauth-token', token)
         }
       }
-      return Promise.resolve({ statusCode: 200, headers: { 'Content-Type': 'text/html' }, data: '<html><body><script>window.close()</script></body></html>' })
+      return new Response('<html><body><script>window.close()</script></body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' }
+      })
     }
     
     const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '')
     const filePath = path.join(RENDERER_DIR, safeName)
     if (!fs.existsSync(filePath)) {
-      return Promise.resolve({ statusCode: 404, headers: { 'Content-Type': 'text/plain' }, data: 'Not found' })
+      return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })
     }
-    return Promise.resolve({ statusCode: 200, headers: { 'Content-Type': getMime(filePath) }, data: fs.createReadStream(filePath) })
+    const stream = fs.createReadStream(filePath)
+    return new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': getMime(filePath) }
+    })
   })
   Menu.setApplicationMenu(null)
   
@@ -588,6 +621,7 @@ app.whenReady().then(() => {
   
   safe('set-oauth-token', async (_, { token, username }) => {
     saveOAuthToken(token, username)
+    await initSessionFromToken(token)
     return true
   })
   
@@ -609,11 +643,14 @@ app.whenReady().then(() => {
   safe('open-cache', openCache)
   safe('get-settings', getSettings)
   safe('set-settings', setSettings)
-  ipcMain.handle('win-minimize', () => win.minimize())
-  ipcMain.handle('win-maximize', () => { win.isMaximized() ? win.unmaximize() : win.maximize() })
-  ipcMain.handle('win-close', () => win.close())
+  safe('win-minimize', async () => { if (win) win.minimize() })
+  safe('win-maximize', async () => { if (win) { win.isMaximized() ? win.unmaximize() : win.maximize() } })
+  safe('win-close', async () => { if (win) win.close() })
   
   loadOAuthToken()
+  if (oauthToken) {
+    initSessionFromToken(oauthToken).catch(() => {})
+  }
   createWindow()
 })
 
