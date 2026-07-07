@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('nimbus', {
   setOAuthToken: data => ipcRenderer.invoke('set-oauth-token', data),
   clearOAuthToken: () => ipcRenderer.invoke('clear-oauth-token'),
   list: () => ipcRenderer.invoke('list'),
-  upload: () => ipcRenderer.invoke('upload'),
+  upload: folder => ipcRenderer.invoke('upload', folder || ''),
   uploadPaths: data => ipcRenderer.invoke('upload-paths', data),
   download: data => ipcRenderer.invoke('download', data),
   preview: data => ipcRenderer.invoke('download', { ...data, preview: true }),

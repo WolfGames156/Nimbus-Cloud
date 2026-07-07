@@ -10,10 +10,10 @@
   <div class="titlebar" id="titlebar">
     <div class="titlebar-drag">Nimbus Cloud</div>
     <div class="titlebar-controls">
-      <button class="titlebar-btn" id="winMinimize" title="Kucult">
+      <button class="titlebar-btn" id="winMinimize" title="Küçült">
         <svg width="12" height="12" viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" rx="0.75" fill="currentColor"/></svg>
       </button>
-      <button class="titlebar-btn" id="winMaximize" title="Buyut">
+      <button class="titlebar-btn" id="winMaximize" title="Büyüt">
         <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
       </button>
       <button class="titlebar-btn titlebar-close" id="winClose" title="Kapat">
@@ -35,10 +35,10 @@
         Login with GitHub
       </button>
       <div style="margin-top:20px;border-top:1px solid var(--theme-line);padding-top:20px">
-        <p class="sub" style="margin-bottom:8px">Alternatif: Token yapistir</p>
+        <p class="sub" style="margin-bottom:8px">Alternatif: Token yapıştır</p>
         <div style="display:flex;gap:8px">
           <input id="tokenInput" type="text" placeholder="gho_... token" style="flex:1"/>
-          <button id="tokenSubmitBtn" class="ghost" style="padding:10px 16px;white-space:nowrap">Giris</button>
+          <button id="tokenSubmitBtn" class="ghost" style="padding:10px 16px;white-space:nowrap">Giriş</button>
         </div>
       </div>
     </section>
@@ -49,7 +49,7 @@
       <div class="sidebar-content">
         <div class="logo-wrap">
           <div class="logo small">Nimbus<span>Cloud</span></div>
-          <button class="sidebar-toggle" id="sidebarToggle" aria-label="Menu">
+          <button class="sidebar-toggle" id="sidebarToggle" aria-label="Menüyü aç/kapat">
             <span></span><span></span><span></span>
           </button>
         </div>
@@ -70,8 +70,8 @@
           </button>
         </nav>
         <div class="sidebar-bottom">
-          <button id="upload" class="primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Dosya yukle</span></button>
-          <button id="logout" class="ghost"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 6"/></svg><span>Cikis</span></button>
+          <button id="upload" class="primary"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Dosya yükle</span></button>
+          <button id="logout" class="ghost"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 6"/></svg><span>Çıkış</span></button>
         </div>
       </div>
     </aside>
@@ -80,7 +80,7 @@
       <header class="content-header">
         <div class="header-left">
           <h1 id="pageTitle">Dosyalar</h1>
-          <p id="fileStatus" class="sub">Hazir</p>
+          <p id="fileStatus" class="sub">Hazır</p>
         </div>
         <div class="header-right">
           <button id="refresh" class="refresh-btn" title="Senkronize et">
@@ -92,24 +92,28 @@
       
       <section id="page-files" class="page active-page">
         <div id="bulkToolbar" class="bulk-toolbar hidden">
-          <span id="selectedCount">0 secili</span>
+          <span id="selectedCount">0 seçili</span>
           <div class="bulk-actions">
-            <button id="bulkDownload" class="ghost" title="Indir">
+            <button id="bulkDownload" class="ghost" title="İndir">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Indir
+              İndir
+            </button>
+            <button id="bulkMoveBtn" class="ghost" title="Taşı">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17l-5 5 5-5zM12 5l5 5-5-5z"/><path d="M5 22h16v-8M22 5H6v16"/></svg>
+              Taşı
             </button>
             <button id="bulkDelete" class="ghost danger-btn" title="Sil">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               Sil
             </button>
-            <button id="bulkClear" class="ghost">Iptal</button>
+            <button id="bulkClear" class="ghost">İptal</button>
           </div>
         </div>
         <section id="files" class="grid"></section>
       </section>
       
       <section id="page-backups" class="page">
-        <div class="big-card"><h2>Yedekler</h2><p class="sub">Veritabanini guvenli sekilde disa/ice aktar.</p><button id="backupDown" class="primary">Yedek indir</button><button id="backupUp" class="ghost">Yedek yukle</button></div>
+        <div class="big-card"><h2>Yedekler</h2><p class="sub">Veritabanını güvenli şekilde dışa/içe aktar.</p><button id="backupDown" class="primary">Yedek indir</button><button id="backupUp" class="ghost">Yedek yükle</button></div>
       </section>
       
       <section id="page-settings" class="page">
@@ -119,16 +123,16 @@
             <label>Dil</label>
             <select id="settingsLang"><option>TR</option><option>EN</option></select>
             <label>Tema</label>
-            <select id="settingsTheme"><option>Siyah</option><option>Koyu gri</option><option>Midnight Blue</option><option>Emerald</option><option>Sunset</option><option>Acik</option></select>
+            <select id="settingsTheme"><option>Siyah</option><option>Koyu gri</option><option>Midnight Blue</option><option>Emerald</option><option>Sunset</option><option>Açık</option></select>
           </div>
           <div class="big-card">
             <h2>Depolama</h2>
             <button id="clearCache" class="ghost">Preview cache temizle</button>
-            <button id="openCache" class="ghost">Cache klasoru</button>
+            <button id="openCache" class="ghost">Cache klasörü</button>
           </div>
           <div class="big-card">
             <h2>Gizlilik</h2>
-            <p class="sub">Verileriniz GitHub private depolarinda tutulur.</p>
+            <p class="sub">Verileriniz GitHub private depolarında tutulur.</p>
           </div>
         </div>
       </section>
@@ -138,14 +142,14 @@
   <div id="transferToast" class="transfer-toast hidden">
     <div class="toast-thumb" id="toastThumb">UP</div>
     <div class="toast-main">
-      <strong id="toastTitle">Aktarim</strong>
+      <strong id="toastTitle">Aktarım</strong>
       <div class="progress"><div id="bar"></div></div>
-      <p id="progressText">Hazir</p>
+      <p id="progressText">Hazır</p>
     </div>
   </div>
   
   <div id="dropOverlay" class="drop-overlay">
-    <div><strong>Dosyalari birak</strong><span>Yukleme otomatik baslar</span></div>
+    <div><strong>Dosyaları bırak</strong><span>Yükleme otomatik başlar</span></div>
   </div>
   
   <div id="previewModal" class="modal hidden">
@@ -158,10 +162,10 @@
 
   <div id="renameModal" class="modal hidden">
     <div class="modal-card rename-modal-card">
-      <h2>Yeniden adlandir</h2>
-      <input id="renameInput" class="rename-modal-input" type="text" placeholder="Yeni dosya adi...">
+      <h2>Yeniden adlandır</h2>
+      <input id="renameInput" class="rename-modal-input" type="text" placeholder="Yeni dosya adı...">
       <div class="rename-modal-actions">
-        <button id="renameCancel" class="ghost">Iptal</button>
+        <button id="renameCancel" class="ghost">İptal</button>
         <button id="renameConfirm" class="primary">Kaydet</button>
       </div>
     </div>
@@ -169,23 +173,34 @@
 
   <div id="newFolderModal" class="modal hidden">
     <div class="modal-card rename-modal-card">
-      <h2>Yeni klasor olustur</h2>
-      <input id="newFolderName" class="rename-modal-input" type="text" placeholder="Klasor adi...">
+      <h2>Yeni klasör oluştur</h2>
+      <input id="newFolderName" class="rename-modal-input" type="text" placeholder="Klasör adı...">
       <div class="rename-modal-actions">
-        <button id="newFolderCancel" class="ghost">Iptal</button>
-        <button id="newFolderConfirm" class="primary">Olustur</button>
+        <button id="newFolderCancel" class="ghost">İptal</button>
+        <button id="newFolderConfirm" class="primary">Oluştur</button>
       </div>
     </div>
   </div>
 
   <div id="renameFolderModal" class="modal hidden">
     <div class="modal-card rename-modal-card">
-      <h2>Klasoru yeniden adlandir</h2>
+      <h2>Klasörü yeniden adlandır</h2>
       <input id="renameFolderOld" type="hidden">
-      <input id="renameFolderNew" class="rename-modal-input" type="text" placeholder="Yeni klasor adi...">
+      <input id="renameFolderNew" class="rename-modal-input" type="text" placeholder="Yeni klasör adı...">
       <div class="rename-modal-actions">
-        <button id="renameFolderCancel" class="ghost">Iptal</button>
+        <button id="renameFolderCancel" class="ghost">İptal</button>
         <button id="renameFolderConfirm" class="primary">Kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="moveFolderModal" class="modal hidden">
+    <div class="modal-card rename-modal-card">
+      <h2>Dosyayı taşı</h2>
+      <select id="moveFolderSelect" class="rename-modal-input" style="margin-bottom:16px"></select>
+      <div class="rename-modal-actions">
+        <button id="moveFolderCancel" class="ghost">İptal</button>
+        <button id="moveFolderConfirm" class="primary">Taşı</button>
       </div>
     </div>
   </div>

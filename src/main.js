@@ -232,10 +232,10 @@ async function listFiles() {
   return { files, folders }
 }
 
-async function pickUpload() {
+async function pickUpload(_, folder = '') {
   const res = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'] })
   if (res.canceled) return listFiles()
-  return uploadPaths(null, res.filePaths)
+  return uploadPaths(null, res.filePaths, folder || '')
 }
 
 async function uploadPaths(_, filePaths, folder = '') {
@@ -600,7 +600,7 @@ if (!gotTheLock) {
     safe('clear-oauth-token', async () => { clearOAuthToken(); return true })
     
     safe('list', listFiles)
-    safe('upload', pickUpload)
+    safe('upload', async (_, folder) => pickUpload(null, folder || ''))
     safe('upload-paths', async (_, data) => uploadPaths(null, data.paths, data.folder))
     safe('download', downloadNamed)
     safe('delete', deleteNamed)

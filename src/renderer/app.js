@@ -12,14 +12,14 @@ function saveToken(token) { try { localStorage.setItem('github_token', token) } 
 function clearToken() { try { localStorage.removeItem('github_token') } catch {} }
 
 const texts = {
-  TR: { files: 'Dosyalar', folders: 'Klasorler', empty: 'Henuz dosya yok', preview: 'Onizle', download: 'Indir', del: 'Sil', confirm: 'Silinsin mi?', rename: 'Yeniden adlandir', newFolder: 'Yeni klasor', folderName: 'Klasor adi...', move: 'Tasi', moveHere: 'Buraya tasi' },
-  EN: { files: 'Files', folders: 'Folders', empty: 'No files yet', preview: 'Preview', download: 'Download', del: 'Delete', confirm: 'Delete?', rename: 'Rename', newFolder: 'New folder', folderName: 'Folder name...', move: 'Move', moveHere: 'Move here' },
+  TR: { files: 'Dosyalar', empty: 'Henüz dosya yok', preview: 'Önizle', download: 'İndir', del: 'Sil', confirm: 'Silinsin mi?', rename: 'Yeniden adlandır', newFolder: 'Yeni klasör', move: 'Taşı', moveHere: 'Buraya taşı' },
+  EN: { files: 'Files', empty: 'No files yet', preview: 'Preview', download: 'Download', del: 'Delete', confirm: 'Delete?', rename: 'Rename', newFolder: 'New folder', move: 'Move', moveHere: 'Move here' },
 }
 function lang() { return 'TR' }
 function t(k) { return texts[lang()][k] }
 function fmt(n) {
-  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
-  if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)} MB`
+  if (n >= 1073741824) return `${(n / 1073741824).toFixed(1)} GB`
+  if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`
   if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${n} B`
 }
@@ -38,7 +38,7 @@ async function call(fn, target) {
     return res
   } catch (e) {
     console.error('Call error:', e)
-    if (target) target.textContent = 'Hata olustu'
+    if (target) target.textContent = 'Hata oluştu'
     return null
   }
 }
@@ -55,13 +55,6 @@ function fileIcon(file) {
 
 function canPreview(file) { return file.type && (file.type.startsWith('image/') || file.type.startsWith('video/')) }
 
-function fileActions(file) {
-  const name = encodeURIComponent(file.name)
-  const folder = encodeURIComponent(file.folder || '')
-  const p = canPreview(file) ? `<button onclick="preview('${name}','${folder}')" title="${t('preview')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''
-  return `${p}<button onclick="downloadFile('${name}','${folder}')" title="${t('download')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button><button onclick="renameFile('${name}','${folder}')" title="${t('rename')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="danger" onclick="removeFile('${name}','${folder}')" title="${t('del')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>`
-}
-
 function render(data) {
   if (!data || !data.files) return
   window.currentData = data
@@ -69,43 +62,52 @@ function render(data) {
   const folders = (data.folders || []).filter(f => (f.folder || '') === currentFolder)
   const files = data.files.filter(f => (f.folder || '') === currentFolder && f.name.toLowerCase().includes(query))
   const total = data.files.reduce((s, f) => s + f.size, 0)
-  $('fileStatus').textContent = `${data.files.length} dosya, ${folders.length} klasor · ${fmt(total)} alan`
+  $('fileStatus').textContent = `${data.files.length} dosya, ${folders.length} klasör · ${fmt(total)} alan`
 
   const hasSelection = selectedFiles.size > 0
   $('bulkToolbar').classList.toggle('hidden', !hasSelection)
-  $('selectedCount').textContent = `${selectedFiles.size} secili`
+  $('selectedCount').textContent = `${selectedFiles.size} seçili`
 
   let html = ''
   if (currentFolder) {
-    html += `<article class="file folder-item" onclick="navigateUp()"><div class="thumb"><span>..</span></div><div class="name">Geri</div></article>`
+    html += `<article class="file folder-item" onclick="navigateUp()"><div class="thumb"><span style="font-size:20px">⬆</span></div><div class="name">.. (Geri)</div></article>`
   }
-  html += `<article class="file folder-item" onclick="promptNewFolder()"><div class="thumb"><span>+</span></div><div class="name">${t('newFolder')}</div></article>`
+  html += `<article class="file folder-item" onclick="promptNewFolder()"><div class="thumb"><span style="font-size:24px">+</span></div><div class="name">${t('newFolder')}</div></article>`
 
   for (const folder of folders) {
     const enc = encodeURIComponent(folder.name)
     html += `<article class="file folder-item" ondblclick="navigateFolder('${enc}')">
-      <div class="thumb"><span style="font-size:28px">&#128193;</span></div>
+      <div class="thumb"><span style="font-size:28px">📁</span></div>
       <div class="name" title="${folder.name}">${folder.name}</div>
       <div class="actions">
-        <button onclick="event.stopPropagation();renameFolderUI('${enc}')" title="Yeniden adlandir"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button onclick="event.stopPropagation();renameFolderUI('${enc}')" title="Yeniden adlandır"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="danger" onclick="event.stopPropagation();removeFolder('${enc}')" title="Sil"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </div>
     </article>`
   }
 
   for (const f of files) {
-    const isSelected = selectedFiles.has(f.name + '|' + (f.folder || ''))
+    const key = f.name + '|' + (f.folder || '')
+    const isSelected = selectedFiles.has(key)
+    const encName = encodeURIComponent(f.name)
+    const encFolder = encodeURIComponent(f.folder || '')
     html += `<article class="file${isSelected ? ' selected' : ''}" data-name="${f.name}">
-      <input type="checkbox" class="file-select" ${isSelected ? 'checked' : ''} onchange="toggleSelect('${encodeURIComponent(f.name)}','${encodeURIComponent(f.folder||'')}', this.checked)">
+      <input type="checkbox" class="file-select" ${isSelected ? 'checked' : ''} onchange="toggleSelect('${encName}','${encFolder}', this.checked)">
       ${fileIcon(f)}
       <div class="name" title="${f.name}">${f.name}</div>
-      <div class="meta">${fmt(f.size)} · ${f.sha256 ? f.sha256.slice(0, 10) : ''}</div>
-      <div class="actions">${fileActions(f)}</div>
+      <div class="meta">${fmt(f.size)}</div>
+      <div class="actions">
+        ${canPreview(f) ? `<button onclick="preview('${encName}','${encFolder}')" title="${t('preview')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
+        <button onclick="downloadFile('${encName}','${encFolder}')" title="${t('download')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+        <button onclick="moveFileUI('${encName}','${encFolder}')" title="Taşı"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17l-5 5 5-5zM12 5l5 5-5-5z"/><path d="M5 22h16v-8M22 5H6v16"/></svg></button>
+        <button onclick="renameFile('${encName}','${encFolder}')" title="${t('rename')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="danger" onclick="removeFile('${encName}','${encFolder}')" title="${t('del')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+      </div>
     </article>`
   }
 
   if (!folders.length && !files.length && !currentFolder) {
-    html += `<p class="sub">${t('empty')}</p>`
+    html += `<p class="sub" style="grid-column:1/-1;text-align:center">${t('empty')}</p>`
   }
 
   $('files').innerHTML = html
@@ -140,7 +142,7 @@ function showPage(page) {
   document.querySelectorAll('.page').forEach(el => el.classList.remove('active-page'))
   document.querySelectorAll('.nav-btn').forEach(el => el.classList.toggle('active', el.dataset.page === page))
   $(`page-${page}`).classList.add('active-page')
-  $('pageTitle').textContent = page === 'files' ? t('files') : page === 'backups' ? 'Yedekler' : 'Ayarlar'
+  $('pageTitle').textContent = page === 'files' ? 'Dosyalar' : page === 'backups' ? 'Yedekler' : 'Ayarlar'
 }
 
 function toggleSidebar() {
@@ -173,7 +175,8 @@ async function showApp(username) {
 function navigateFolder(encodedName) {
   currentFolder = decodeURIComponent(encodedName)
   selectedFiles.clear()
-  render(window.currentData || { files: [], folders: [] })
+  const data = window.currentData || { files: [], folders: [] }
+  render(data)
 }
 
 function navigateUp() {
@@ -200,15 +203,14 @@ async function doNewFolder() {
 
 async function removeFolder(encodedName) {
   const name = decodeURIComponent(encodedName)
-  if (!confirm(`"${name}" klasoru ve icerigi silinecek. Emin misin?`)) return
+  if (!confirm(`"${name}" klasörü ve içeriği silinecek. Emin misin?`)) return
   const data = await call(() => window.nimbus.deleteFolder(name))
   if (data) { render(data); saveFileCache(data) }
 }
 
 async function renameFolderUI(encodedName) {
-  const oldName = decodeURIComponent(encodedName)
-  $('renameFolderOld').value = oldName
-  $('renameFolderNew').value = oldName
+  $('renameFolderOld').value = decodeURIComponent(encodedName)
+  $('renameFolderNew').value = decodeURIComponent(encodedName)
   $('renameFolderModal').classList.remove('hidden')
   $('renameFolderNew').focus()
   $('renameFolderNew').select()
@@ -224,13 +226,13 @@ async function doRenameFolder() {
 }
 
 async function upload() {
-  showToast('Dosya yukleniyor')
-  const data = await call(() => window.nimbus.upload())
+  showToast('Dosya yükleniyor')
+  const data = await call(() => window.nimbus.upload(currentFolder))
   if (data) { render(data); saveFileCache(data); showPage('files') }
 }
 
 async function uploadDropped(paths) {
-  showToast('Dosya yukleniyor')
+  showToast('Dosya yükleniyor')
   const data = await call(() => window.nimbus.uploadPaths({ paths, folder: currentFolder }))
   if (data) { render(data); saveFileCache(data); showPage('files') }
 }
@@ -240,7 +242,7 @@ async function preview(name, folder) {
   if (!result) return
   $('previewTitle').textContent = result.name
   const src = `file:///${result.path.replaceAll('\\\\', '/').replaceAll('\\', '/')}`
-  $('previewBody').innerHTML = result.type.startsWith('video/') ? `<video src="${src}" controls autoplay></video>` : result.type.startsWith('image/') ? `<img src="${src}">` : `<p class="sub">Onizleme yok</p>`
+  $('previewBody').innerHTML = result.type.startsWith('video/') ? `<video src="${src}" controls autoplay></video>` : result.type.startsWith('image/') ? `<img src="${src}">` : `<p class="sub">Önizleme yok</p>`
   $('previewModal').classList.remove('hidden')
 }
 
@@ -253,6 +255,64 @@ async function removeFile(name, folder) {
     const data = await call(() => window.nimbus.delete({ filename: decodeURIComponent(name), folder: decodeURIComponent(folder || '') }))
     if (data) { render(data); saveFileCache(data) }
   }
+}
+
+let pendingMoveName = ''
+let pendingMoveFolder = ''
+
+function moveFileUI(encodedName, encodedFolder) {
+  pendingMoveName = decodeURIComponent(encodedName)
+  pendingMoveFolder = decodeURIComponent(encodedFolder || '')
+  const sel = $('moveFolderSelect')
+  const data = window.currentData || { folders: [] }
+  const allFolders = data.folders || []
+  sel.innerHTML = '<option value="">(Kök dizin)</option>'
+  for (const f of allFolders) {
+    const path = (f.folder ? f.folder + '/' : '') + f.name
+    if (path !== pendingMoveName) {
+      const opt = document.createElement('option')
+      opt.value = path
+      opt.textContent = path
+      sel.appendChild(opt)
+    }
+  }
+  $('moveFolderModal').classList.remove('hidden')
+}
+
+async function doMoveFile() {
+  const target = $('moveFolderSelect').value
+  $('moveFolderModal').classList.add('hidden')
+  const data = await call(() => window.nimbus.moveFiles({ files: [{ name: pendingMoveName, folder: pendingMoveFolder }], toFolder: target }))
+  pendingMoveName = ''
+  pendingMoveFolder = ''
+  if (data) { render(data); saveFileCache(data) }
+}
+
+async function bulkMove() {
+  const sel = $('moveFolderSelect')
+  const data = window.currentData || { folders: [] }
+  const allFolders = data.folders || []
+  sel.innerHTML = '<option value="">(Kök dizin)</option>'
+  for (const f of allFolders) {
+    const opt = document.createElement('option')
+    opt.value = (f.folder ? f.folder + '/' : '') + f.name
+    opt.textContent = opt.value
+    sel.appendChild(opt)
+  }
+  $('moveFolderSelect').dataset.bulk = '1'
+  $('moveFolderModal').classList.remove('hidden')
+}
+
+async function doBulkMove() {
+  const target = $('moveFolderSelect').value
+  $('moveFolderModal').classList.add('hidden')
+  const items = [...selectedFiles].map(k => {
+    const [name, folder] = k.split('|')
+    return { name, folder: folder || '' }
+  })
+  selectedFiles.clear()
+  const data = await call(() => window.nimbus.moveFiles({ files: items, toFolder: target }))
+  if (data) { render(data); saveFileCache(data) }
 }
 
 let pendingRenameName = ''
@@ -286,19 +346,24 @@ async function doRename() {
 async function bulkDownload() {
   for (const key of selectedFiles) {
     const [name, folder] = key.split('|')
-    await call(() => window.nimbus.download({ filename: name, folder }))
+    await call(() => window.nimbus.download({ filename: name, folder: folder || '' }))
   }
   selectedFiles.clear()
   render(window.currentData || { files: [], folders: [] })
 }
 
 async function bulkDelete() {
-  if (!confirm(`${selectedFiles.size} ogeler silinecek. Emin misin?`)) return
-  const items = [...selectedFiles].map(k => { const [name, folder] = k.split('|'); return { name, folder } })
+  if (!confirm(`${selectedFiles.size} öğe silinecek. Emin misin?`)) return
+  const items = [...selectedFiles].map(k => {
+    const [name, folder] = k.split('|')
+    return { name, folder: folder || '' }
+  })
   selectedFiles.clear()
   const data = await call(() => window.nimbus.bulkDelete(items))
   if (data) { render(data); saveFileCache(data) }
 }
+
+let moveModalHandler = null
 
 function showToast(title) { $('toastTitle').textContent = title; $('transferToast').classList.remove('hidden') }
 function hideToastLater() { setTimeout(() => $('transferToast').classList.add('hidden'), 1800) }
@@ -320,6 +385,7 @@ async function handleTokenPaste() {
     setTimeout(() => $('tokenInput').style.borderColor = '', 2000)
   }
 }
+
 $('upload').onclick = upload
 $('refresh').onclick = syncFiles
 $('backupDown').onclick = () => call(() => window.nimbus.backupDownload())
@@ -332,6 +398,7 @@ $('openCache').onclick = () => call(() => window.nimbus.openCache())
 $('closePreview').onclick = () => $('previewModal').classList.add('hidden')
 $('search').oninput = () => render(window.currentData || { files: [], folders: [] })
 $('bulkDownload').onclick = bulkDownload
+$('bulkMoveBtn').onclick = bulkMove
 $('bulkDelete').onclick = bulkDelete
 $('bulkClear').onclick = () => { selectedFiles.clear(); render(window.currentData || { files: [], folders: [] }) }
 $('newFolderConfirm').onclick = doNewFolder
@@ -340,7 +407,15 @@ $('newFolderName').onkeydown = e => { if (e.key === 'Enter') doNewFolder(); if (
 $('renameFolderConfirm').onclick = doRenameFolder
 $('renameFolderCancel').onclick = () => $('renameFolderModal').classList.add('hidden')
 $('renameFolderNew').onkeydown = e => { if (e.key === 'Enter') doRenameFolder(); if (e.key === 'Escape') $('renameFolderModal').classList.add('hidden') }
-document.querySelectorAll('.nav-btn[data-page]').forEach(btn => btn.onclick = () => { currentFolder = ''; selectedFiles.clear(); showPage(btn.dataset.page); if (btn.dataset.page === 'files') syncFiles() })
+$('moveFolderConfirm').onclick = () => {
+  const isBulk = $('moveFolderSelect').dataset.bulk === '1'
+  if (isBulk) { doBulkMove(); $('moveFolderSelect').dataset.bulk = '' }
+  else doMoveFile()
+}
+$('moveFolderCancel').onclick = () => { $('moveFolderModal').classList.add('hidden'); pendingMoveName = '' }
+document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
+  btn.onclick = () => { currentFolder = ''; selectedFiles.clear(); showPage(btn.dataset.page); if (btn.dataset.page === 'files') syncFiles() }
+})
 $('sidebarToggle').onclick = toggleSidebar
 $('winMinimize').onclick = () => window.nimbus.winMinimize()
 $('winMaximize').onclick = () => window.nimbus.winMaximize()
