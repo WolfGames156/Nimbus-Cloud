@@ -385,7 +385,7 @@ Click Download → direct link to GitHub Releases (zero Vercel bandwidth)
 
 ## License
 
-MIT © 2026 WolfGames156
+MIT © 2026 SYS_0xA7
 
 ---
 
