@@ -250,8 +250,25 @@ function hashFile(filePath) {
   return h.digest('hex')
 }
 
+function localDbPath() {
+  return path.join(getDataPath(), 'db-cache.json')
+}
+
+function saveLocalDb(db) {
+  try { fs.writeFileSync(localDbPath(), JSON.stringify(db, null, 2)) } catch {}
+}
+
+function loadLocalDb() {
+  try {
+    const file = localDbPath()
+    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {}
+  return null
+}
+
 async function loadDb(ownerName, forceRefresh = false) {
   if (!forceRefresh && memoryDb) return memoryDb
+  let lastError = null
   for (const repo of repos()) {
     try {
       await ensureRepo(ownerName, repo)
@@ -262,16 +279,22 @@ async function loadDb(ownerName, forceRefresh = false) {
       const ok = await downloadAsset(ownerName, asset.id, tmp, repo)
       if (ok && fs.existsSync(tmp)) {
         memoryDb = JSON.parse(fs.readFileSync(tmp, 'utf8'))
+        saveLocalDb(memoryDb)
         return memoryDb
       }
-    } catch {}
+    } catch (e) { lastError = e }
   }
+  // Fallback to local cache if GitHub is unreachable
+  const local = loadLocalDb()
+  if (local && local.files) { memoryDb = local; return local }
+  if (lastError && !String(lastError.message).includes('404')) throw lastError
   memoryDb = { files: [], folders: [] }
   return memoryDb
 }
 
 async function saveDb(ownerName, db) {
   memoryDb = db
+  saveLocalDb(db)
   const tmp = path.join(os.tmpdir(), `nimbus-db-save-${Date.now()}.json`)
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2))
   for (const repo of repos()) {
@@ -319,7 +342,8 @@ async function uploadPaths(_, filePaths, folder = '') {
     } catch { rel = null; blobTag = tag; break }
   }
   if (!rel) rel = await release(s.owner, blobTag, REPO)
-  for (const fp of filePaths.filter(fp => fs.existsSync(fp) && fs.statSync(fp).isFile())) {
+
+  async function uploadOneFile(fp) {
     const stat = fs.statSync(fp)
     const filename = path.basename(fp)
     const parts = []
@@ -348,8 +372,23 @@ async function uploadPaths(_, filePaths, folder = '') {
     fs.writeFileSync(manifestPath, JSON.stringify(manifest))
     const manifestName = `${s.username}__${filename}.manifest.json`
     const asset = await uploadAsset(s.owner, rel, manifestPath, manifestName, REPO)
-    db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename && (f.folder || '') === folder))
-    db.files.push({ username: s.username, filename, folder, size: stat.size, sha256: manifest.sha256, type: manifest.type, manifestAssetId: asset.id, createdAt: Date.now() })
+    return { filename, folder, size: stat.size, sha256: manifest.sha256, type: manifest.type, manifestAssetId: asset.id }
+  }
+
+  const filesToUpload = filePaths.filter(fp => fs.existsSync(fp) && fs.statSync(fp).isFile())
+  // Upload in parallel batches of 5
+  const batchSize = 5
+  for (let i = 0; i < filesToUpload.length; i += batchSize) {
+    const batch = filesToUpload.slice(i, i + batchSize)
+    const results = await Promise.all(batch.map(fp => uploadOneFile(fp).catch(e => {
+      console.error('Upload error:', e.message)
+      return null
+    })))
+    for (const r of results) {
+      if (!r) continue
+      db.files = db.files.filter(f => !(f.username === s.username && f.filename === r.filename && (f.folder || '') === folder))
+      db.files.push({ username: s.username, ...r, createdAt: Date.now() })
+    }
   }
   // Auto-create folder entries in DB
   if (folder) {
