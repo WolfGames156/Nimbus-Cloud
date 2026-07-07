@@ -37,7 +37,7 @@ function obfuscate(file) {
 fs.cpSync(src, backup, { recursive: true })
 try {
   for (const file of targets) obfuscate(file)
-  execSync('npx electron-builder --win portable', { cwd: root, stdio: 'inherit', shell: true, env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false', CSC_LINK: '' } })
+  execSync('npx electron-builder --win portable', { cwd: root, stdio: 'inherit', shell: true, env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false', CSC_LINK: '', WIN_CSC_LINK: '' } })
 } finally {
   fs.rmSync(src, { recursive: true, force: true })
   fs.cpSync(backup, src, { recursive: true })

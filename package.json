@@ -2,6 +2,7 @@
   "name": "nimbus-cloud",
   "version": "0.1.0",
   "description": "Nimbus Cloud desktop app",
+  "author": "Nimbus Cloud",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
