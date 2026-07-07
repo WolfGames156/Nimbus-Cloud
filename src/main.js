@@ -280,7 +280,19 @@ async function loadDb(ownerName, forceRefresh) {
 async function saveDb(ownerName, db) {
   memoryDb = db
   saveLocalDb(db)
-  scheduleSync()
+  // Synchronous GitHub upload
+  const REPO = require('./config').REPO
+  const tmp = path.join(os.tmpdir(), `nimbus-db-save-${Date.now()}.json`)
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2))
+  for (const repo of repos()) {
+    try {
+      await ensureRepo(ownerName, repo)
+      const rel = await release(ownerName, DB_TAG, repo)
+      await uploadAsset(ownerName, rel, tmp, 'db.json', repo)
+    } catch (e) {
+      if (repo === REPO) throw e
+    }
+  }
 }
 
 function requireSession() {
