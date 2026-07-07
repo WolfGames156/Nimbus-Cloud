@@ -11,6 +11,7 @@ function AuthCallbackInner() {
 
   useEffect(() => {
     if (token) {
+      navigator.clipboard.writeText(token).catch(() => {})
       window.location.href = 'nimbus://callback?token=' + token;
       const timer = setTimeout(() => setShowManual(true), 2000);
       return () => clearTimeout(timer);

@@ -304,6 +304,22 @@ function showToast(title) { $('toastTitle').textContent = title; $('transferToas
 function hideToastLater() { setTimeout(() => $('transferToast').classList.add('hidden'), 1800) }
 
 $('githubLoginBtn').onclick = () => window.nimbus.githubLogin()
+$('tokenSubmitBtn').onclick = handleTokenPaste
+$('tokenInput').onkeydown = e => { if (e.key === 'Enter') handleTokenPaste() }
+
+async function handleTokenPaste() {
+  const token = $('tokenInput').value.trim()
+  if (!token) return
+  const username = await call(() => window.nimbus.getUser(token), null)
+  if (username) {
+    saveToken(token)
+    await call(() => window.nimbus.setOAuthToken({ token, username }), null)
+    showApp(username)
+  } else {
+    $('tokenInput').style.borderColor = 'var(--theme-danger)'
+    setTimeout(() => $('tokenInput').style.borderColor = '', 2000)
+  }
+}
 $('upload').onclick = upload
 $('refresh').onclick = syncFiles
 $('backupDown').onclick = () => call(() => window.nimbus.backupDownload())

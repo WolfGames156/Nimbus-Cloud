@@ -540,67 +540,96 @@ function getMime(filePath) {
   return map[ext] || 'application/octet-stream'
 }
 
-app.whenReady().then(() => {
-  protocol.handle('nimbus', (request) => {
-    const url = new URL(request.url)
-    const filename = url.hostname || url.pathname.replace(/^\//, '')
-    
-    if (filename === 'callback') {
-      const token = url.searchParams.get('token')
-      if (token) {
-        saveOAuthToken(token, 'github_user')
-        initSessionFromToken(token).catch(() => {})
-        if (win && !win.isDestroyed()) win.webContents.send('oauth-token', token)
-      }
-      return new Response('<html><body><script>window.close()</script></body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } })
+function handleNimbusUrl(urlStr) {
+  const url = new URL(urlStr)
+  const filename = url.hostname || url.pathname.replace(/^\//, '')
+  
+  if (filename === 'callback') {
+    const token = url.searchParams.get('token')
+    if (token) {
+      saveOAuthToken(token, 'github_user')
+      initSessionFromToken(token).catch(() => {})
+      if (win && !win.isDestroyed()) win.webContents.send('oauth-token', token)
     }
-    
-    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '')
-    const filePath = path.join(RENDERER_DIR, safeName)
-    if (!fs.existsSync(filePath)) return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })
-    const stream = fs.createReadStream(filePath)
-    return new Response(stream, { status: 200, headers: { 'Content-Type': getMime(filePath) } })
-  })
-  Menu.setApplicationMenu(null)
+    return new Response('<html><body><script>window.close()</script></body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } })
+  }
   
-  safe('github-login', async () => {
-    shell.openExternal('https://nimbus-gitcloud.vercel.app/api/auth/github')
-    return true
-  })
-  
-  safe('get-user', getUser)
-  safe('validate-token', async (_, token) => await validateToken(token))
-  safe('set-oauth-token', async (_, { token }) => {
-    saveOAuthToken(token, 'github_user')
-    await initSessionFromToken(token)
-    return true
-  })
-  safe('clear-oauth-token', async () => { clearOAuthToken(); return true })
-  
-  safe('list', listFiles)
-  safe('upload', pickUpload)
-  safe('upload-paths', async (_, data) => uploadPaths(null, data.paths, data.folder))
-  safe('download', downloadNamed)
-  safe('delete', deleteNamed)
-  safe('rename', renameFile)
-  safe('bulk-delete', bulkDelete)
-  safe('move-files', moveFiles)
-  safe('create-folder', createFolder)
-  safe('delete-folder', deleteFolder)
-  safe('rename-folder', renameFolder)
-  safe('backup-download', backupDownload)
-  safe('backup-upload', backupUpload)
-  safe('clear-cache', clearCache)
-  safe('open-cache', openCache)
-  safe('get-settings', getSettings)
-  safe('set-settings', setSettings)
-  safe('win-minimize', async () => { if (win) win.minimize() })
-  safe('win-maximize', async () => { if (win) { win.isMaximized() ? win.unmaximize() : win.maximize() } })
-  safe('win-close', async () => { if (win) win.close() })
-  
-  loadOAuthToken()
-  if (oauthToken) initSessionFromToken(oauthToken).catch(() => {})
-  createWindow()
-})
+  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '')
+  const filePath = path.join(RENDERER_DIR, safeName)
+  if (!fs.existsSync(filePath)) return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })
+  const stream = fs.createReadStream(filePath)
+  return new Response(stream, { status: 200, headers: { 'Content-Type': getMime(filePath) } })
+}
 
-app.setAsDefaultProtocolClient('nimbus')
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (event, commandLine) => {
+    const url = commandLine.find(a => a.startsWith('nimbus://'))
+    if (url) handleNimbusUrl(url)
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
+  })
+
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    handleNimbusUrl(url)
+  })
+
+  app.whenReady().then(() => {
+    protocol.handle('nimbus', (request) => handleNimbusUrl(request.url))
+    const initUrl = process.argv.find(a => a.startsWith('nimbus://'))
+    if (initUrl) handleNimbusUrl(initUrl)
+    Menu.setApplicationMenu(null)
+    
+    safe('github-login', async () => {
+      shell.openExternal('https://nimbus-gitcloud.vercel.app/api/auth/github')
+      return true
+    })
+    
+    safe('get-user', getUser)
+    safe('validate-token', async (_, token) => await validateToken(token))
+    safe('set-oauth-token', async (_, { token }) => {
+      saveOAuthToken(token, 'github_user')
+      await initSessionFromToken(token)
+      return true
+    })
+    safe('clear-oauth-token', async () => { clearOAuthToken(); return true })
+    
+    safe('list', listFiles)
+    safe('upload', pickUpload)
+    safe('upload-paths', async (_, data) => uploadPaths(null, data.paths, data.folder))
+    safe('download', downloadNamed)
+    safe('delete', deleteNamed)
+    safe('rename', renameFile)
+    safe('bulk-delete', bulkDelete)
+    safe('move-files', moveFiles)
+    safe('create-folder', createFolder)
+    safe('delete-folder', deleteFolder)
+    safe('rename-folder', renameFolder)
+    safe('backup-download', backupDownload)
+    safe('backup-upload', backupUpload)
+    safe('clear-cache', clearCache)
+    safe('open-cache', openCache)
+    safe('get-settings', getSettings)
+    safe('set-settings', setSettings)
+    safe('win-minimize', async () => { if (win) win.minimize() })
+    safe('win-maximize', async () => { if (win) { win.isMaximized() ? win.unmaximize() : win.maximize() } })
+    safe('win-close', async () => { if (win) win.close() })
+    
+    loadOAuthToken()
+    if (oauthToken) initSessionFromToken(oauthToken).catch(() => {})
+    createWindow()
+  })
+}
+
+if (app.isPackaged) {
+  app.setAsDefaultProtocolClient('nimbus')
+} else {
+  const exePath = process.execPath
+  const appPath = path.resolve(process.argv[1])
+  app.setAsDefaultProtocolClient('nimbus', exePath, [appPath])
+}
