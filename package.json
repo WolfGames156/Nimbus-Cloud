@@ -18,11 +18,10 @@
     ],
     "win": {
       "target": [
-        "portable"
+        "nsis"
       ],
-      "artifactName": "Nimbus Cloud.exe",
       "icon": "logo.png",
-      "sign": false
+      "sign": null
     },
     "mac": {
       "icon": "logo.png"
