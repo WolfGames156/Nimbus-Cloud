@@ -4,6 +4,7 @@ const os = require('os')
 const path = require('path')
 const crypto = require('crypto')
 const https = require('https')
+const { execFileSync } = require('child_process')
 const { MIRROR_REPOS, DB_TAG, BLOB_TAG, CHUNK_SIZE } = require('./config')
 
 let win
@@ -354,6 +355,28 @@ async function downloadNamed(_, { filename, folder, preview = false }) {
   return preview ? { path: out, type: file.type, name: filename } : out
 }
 
+async function zipAndUpload(_, { paths, folder }) {
+  const s = requireSession()
+  const REPO = require('./config').REPO
+  const uploadList = []
+  for (const fp of paths) {
+    if (!fs.existsSync(fp)) continue
+    const stat = fs.statSync(fp)
+    if (stat.isDirectory()) {
+      const folderName = path.basename(fp)
+      const zipPath = path.join(os.tmpdir(), `nimbus-zip-${Date.now()}-${folderName}.zip`)
+      try {
+        execFileSync('powershell', ['-NoProfile', '-Command', `Compress-Archive -Path "${fp}" -DestinationPath "${zipPath}" -Force`], { timeout: 120000, windowsHide: true })
+        if (fs.existsSync(zipPath)) uploadList.push(zipPath)
+      } catch (e) { continue }
+    } else {
+      uploadList.push(fp)
+    }
+  }
+  if (!uploadList.length) return listFiles()
+  return uploadPaths(null, uploadList, folder || '')
+}
+
 async function deleteNamed(_, { filename, folder }) {
   const s = requireSession()
   const db = await loadDb(s.owner)
@@ -608,6 +631,7 @@ if (!gotTheLock) {
     safe('list', listFiles)
     safe('upload', async (_, folder) => pickUpload(null, folder || ''))
     safe('upload-paths', async (_, data) => uploadPaths(null, data.paths, data.folder))
+    safe('zip-and-upload', async (_, data) => zipAndUpload(null, data))
     safe('download', downloadNamed)
     safe('delete', deleteNamed)
     safe('rename', renameFile)

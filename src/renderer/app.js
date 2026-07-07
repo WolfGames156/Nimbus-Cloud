@@ -313,12 +313,6 @@ async function upload() {
   if (data) { render(data); saveFileCache(data); showPage('files') }
 }
 
-async function uploadDropped(paths) {
-  showToast('Dosya yükleniyor')
-  const data = await call(() => window.nimbus.uploadPaths({ paths, folder: currentFolder }))
-  if (data) { render(data); saveFileCache(data); showPage('files') }
-}
-
 async function preview(name, folder) {
   const result = await call(() => window.nimbus.preview({ filename: decodeURIComponent(name), folder: decodeURIComponent(folder || '') }))
   if (!result) return
@@ -392,10 +386,17 @@ $('moveFolderCancel').onclick = () => $('moveFolderModal').classList.add('hidden
 document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
   btn.onclick = () => { currentFolder = ''; selectedFiles.clear(); showPage(btn.dataset.page); if (btn.dataset.page === 'files') syncFiles() }
 })
-function hideToastLater() { setTimeout(() => $('transferToast').classList.add('hidden'), 1800) }
-
-function showToast(title) { $('toastTitle').textContent = title; $('transferToast').classList.remove('hidden') }
-function hideToastLater() { setTimeout(() => $('transferToast').classList.add('hidden'), 1800) }
+function hideToast() {
+  if (toastTimer) clearTimeout(toastTimer)
+  $('transferToast').classList.add('hidden')
+}
+let toastTimer = null
+function showToast(title) {
+  $('toastTitle').textContent = title
+  $('transferToast').classList.remove('hidden')
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => $('transferToast').classList.add('hidden'), 5000)
+}
 
 let pasteTimer = null
 
@@ -483,17 +484,25 @@ window.addEventListener('drop', event => {
   $('dropOverlay').classList.remove('active')
   if (event.dataTransfer.files.length > 0) {
     const paths = [...event.dataTransfer.files].map(file => file.path).filter(Boolean)
-    if (paths.length) uploadDropped(paths)
+    if (paths.length) {
+      showToast('İşleniyor...')
+      call(() => window.nimbus.zipAndUpload({ paths, folder: currentFolder })).then(data => {
+        if (data) { render(data); saveFileCache(data); showPage('files') }
+      })
+    }
   }
 })
 
 window.nimbus.onProgress(p => {
   const pct = p.total ? (p.done / p.total) * 100 : 0
-  showToast(p.name)
-  $('toastThumb').textContent = ext(p.name)
-  $('bar').style.width = `${pct}%`
-  $('progressText').textContent = `%${pct.toFixed(1)} · ${fmt(p.speed)}/s · ETA ${eta(p.eta)}`
-  if (pct >= 100) hideToastLater()
+  showToast(p.name || 'İşlem')
+  $('toastThumb').textContent = ext(p.name || 'FILE')
+  $('bar').style.width = `${Math.min(pct, 100)}%`
+  $('progressText').textContent = pct >= 100 ? 'Tamamlandı' : `%${pct.toFixed(1)} · ${fmt(p.speed)}/s · ETA ${eta(p.eta)}`
+  if (pct >= 100) {
+    if (toastTimer) clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => $('transferToast').classList.add('hidden'), 2000)
+  }
 })
 
 window.nimbus.onOAuthToken(async (token) => {

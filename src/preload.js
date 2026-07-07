@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('nimbus', {
   list: () => ipcRenderer.invoke('list'),
   upload: folder => ipcRenderer.invoke('upload', folder || ''),
   uploadPaths: data => ipcRenderer.invoke('upload-paths', data),
+  zipAndUpload: data => ipcRenderer.invoke('zip-and-upload', data),
   download: data => ipcRenderer.invoke('download', data),
   preview: data => ipcRenderer.invoke('download', { ...data, preview: true }),
   delete: data => ipcRenderer.invoke('delete', data),
