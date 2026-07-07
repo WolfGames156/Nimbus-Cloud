@@ -567,12 +567,6 @@ window.nimbus.onOAuthToken(async (token) => {
   }
 })
 
-window.nimbus.onShareLink(async (data) => {
-  showToast('Downloading shared file...')
-  const result = await call(() => window.nimbus.downloadFolderZip(data.shareId), null)
-  hideToast()
-})
-
 window.nimbus.onAutoRefresh(async () => {
   const data = await call(() => window.nimbus.refreshFromGithub())
   if (data) { render(data); saveFileCache(data) }

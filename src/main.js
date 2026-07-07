@@ -666,20 +666,27 @@ async function generateShareLink(_, { filename, folder, isFolder }) {
   }
 
   if (!fs.existsSync(zipPath)) throw new Error('Failed to create share archive')
-  
-  const shareTag = 'nimbus-shares'
-  const shareRel = await release(s.owner, shareTag, REPO)
-  const assetName = `share-${shareId}.zip`
-  await uploadAsset(s.owner, shareRel, zipPath, assetName, REPO)
 
-  // Store share metadata
-  const meta = { id: shareId, filename: filename + '.zip', owner: s.owner, repo: REPO, tag: shareTag, assetName, createdAt: Date.now() }
-  const metaPath = path.join(os.tmpdir(), `share-meta-${shareId}.json`)
-  fs.writeFileSync(metaPath, JSON.stringify(meta))
-  const metaAssetName = `share-${shareId}.meta.json`
-  await uploadAsset(s.owner, shareRel, metaPath, metaAssetName, REPO)
+  // Ensure public nimbus-shares repo
+  const shareRepo = 'nimbus-shares'
+  try {
+    await gh('GET', `https://api.github.com/repos/${s.owner}/${shareRepo}`)
+  } catch {
+    await gh('POST', 'https://api.github.com/user/repos', JSON.stringify({ name: shareRepo, private: false, description: 'Nimbus Cloud shared files' }), { 'Content-Type': 'application/json' })
+    await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/.nimbuskeep`, JSON.stringify({ message: 'init', content: Buffer.from('Nimbus Shares').toString('base64') }), { 'Content-Type': 'application/json' })
+  }
 
-  return `nimbus://share/${shareId}/${encodeURIComponent(filename + '.zip')}/${s.owner}`
+  // Upload ZIP as git commit via Contents API
+  const zipContent = fs.readFileSync(zipPath).toString('base64')
+  const zipName = encodeURIComponent(filename + '.zip')
+  const repoPath = `shares/${shareId}/${zipName}`
+  await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/${repoPath}`, JSON.stringify({ message: `Share ${shareId}: ${filename}`, content: zipContent }), { 'Content-Type': 'application/json' })
+
+  // Upload metadata as git commit
+  const meta = { id: shareId, filename: filename + '.zip', size: fs.statSync(zipPath).size, owner: s.owner, createdAt: Date.now() }
+  await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/shares/${shareId}/meta.json`, JSON.stringify({ message: `Share ${shareId} metadata`, content: Buffer.from(JSON.stringify(meta, null, 2)).toString('base64') }), { 'Content-Type': 'application/json' })
+
+  return `https://nimbus-gitcloud.vercel.app/share/${s.owner}/${shareId}`
 }
 
 function walkDirectory(dirPath, basePath, result = []) {
@@ -806,16 +813,7 @@ function handleNimbusUrl(urlStr) {
     }
     return new Response('<html><body><script>window.close()</script></body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } })
   }
-  
-  if (filename === 'share') {
-    const parts = url.pathname.split('/').filter(Boolean)
-    if (parts.length >= 1) {
-      const shareId = parts[0]
-      if (win && !win.isDestroyed()) win.webContents.send('share-link', { shareId })
-    }
-    return new Response('<html><body><script>window.close()</script></body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } })
-  }
-  
+
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '')
   const filePath = path.join(RENDERER_DIR, safeName)
   if (!fs.existsSync(filePath)) return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })
