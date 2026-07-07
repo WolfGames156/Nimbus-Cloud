@@ -594,6 +594,71 @@ async function downloadFolderZip(_, folderName) {
   return true
 }
 
+async function generateShareLink(_, { filename, folder, isFolder }) {
+  const s = requireSession()
+  const REPO = require('./config').REPO
+  const db = await loadDb(s.owner)
+  const shareId = crypto.randomBytes(8).toString('hex')
+  const tmpDir = path.join(os.tmpdir(), `nimbus-share-${shareId}`)
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const zipPath = path.join(os.tmpdir(), `nimbus-share-${shareId}.zip`)
+
+  if (isFolder) {
+    const prefix = filename ? filename + '/' : ''
+    const files = db.files.filter(f => f.username === s.username && (f.folder || '').startsWith(prefix))
+    const baseDir = path.join(tmpDir, filename)
+    fs.mkdirSync(baseDir, { recursive: true })
+    for (const file of files) {
+      const relPath = (file.folder || '').slice(prefix.length - (filename ? filename.length + 1 : 0))
+      const fileDir = relPath ? path.join(baseDir, relPath) : baseDir
+      fs.mkdirSync(fileDir, { recursive: true })
+      const manPath = path.join(os.tmpdir(), `nimbus-man-${Date.now()}.json`)
+      if (!await downloadAsset(s.owner, file.manifestAssetId, manPath)) continue
+      const manifest = JSON.parse(fs.readFileSync(manPath, 'utf8'))
+      const outFile = path.join(fileDir, manifest.filename)
+      fs.writeFileSync(outFile, '')
+      for (const part of manifest.parts) {
+        const partPath = path.join(os.tmpdir(), `nimbus-part-${Date.now()}.tmp`)
+        if (await downloadAsset(s.owner, part.assetId, partPath)) {
+          fs.appendFileSync(outFile, fs.readFileSync(partPath))
+        }
+      }
+    }
+    execFileSync('powershell', ['-NoProfile', '-Command', `Compress-Archive -Path "${baseDir}" -DestinationPath "${zipPath}" -Force`], { timeout: 120000, windowsHide: true })
+  } else {
+    const file = db.files.find(f => f.username === s.username && f.filename === filename && (f.folder || '') === (folder || ''))
+    if (!file) throw new Error('File not found')
+    const manPath = path.join(os.tmpdir(), `nimbus-man-${Date.now()}.json`)
+    if (!await downloadAsset(s.owner, file.manifestAssetId, manPath)) throw new Error('File unavailable')
+    const manifest = JSON.parse(fs.readFileSync(manPath, 'utf8'))
+    const outFile = path.join(tmpDir, manifest.filename)
+    fs.writeFileSync(outFile, '')
+    for (const part of manifest.parts) {
+      const partPath = path.join(os.tmpdir(), `nimbus-part-${Date.now()}.tmp`)
+      if (await downloadAsset(s.owner, part.assetId, partPath)) {
+        fs.appendFileSync(outFile, fs.readFileSync(partPath))
+      }
+    }
+    execFileSync('powershell', ['-NoProfile', '-Command', `Compress-Archive -Path "${outFile}" -DestinationPath "${zipPath}" -Force`], { timeout: 120000, windowsHide: true })
+  }
+
+  if (!fs.existsSync(zipPath)) throw new Error('Failed to create share archive')
+  
+  const shareTag = 'nimbus-shares'
+  const shareRel = await release(s.owner, shareTag, REPO)
+  const assetName = `share-${shareId}.zip`
+  await uploadAsset(s.owner, shareRel, zipPath, assetName, REPO)
+
+  // Store share metadata
+  const meta = { id: shareId, filename: filename + '.zip', owner: s.owner, repo: REPO, tag: shareTag, assetName, createdAt: Date.now() }
+  const metaPath = path.join(os.tmpdir(), `share-meta-${shareId}.json`)
+  fs.writeFileSync(metaPath, JSON.stringify(meta))
+  const metaAssetName = `share-${shareId}.meta.json`
+  await uploadAsset(s.owner, shareRel, metaPath, metaAssetName, REPO)
+
+  return `https://nimbus-gitcloud.vercel.app/share/${shareId}`
+}
+
 function walkDirectory(dirPath, basePath, result = []) {
   if (!fs.existsSync(dirPath)) return result
   const entries = fs.readdirSync(dirPath, { withFileTypes: true })
@@ -771,6 +836,7 @@ if (!gotTheLock) {
     safe('delete-folder', deleteFolder)
     safe('rename-folder', renameFolder)
     safe('download-folder-zip', downloadFolderZip)
+    safe('generate-share-link', generateShareLink)
     safe('backup-download', backupDownload)
     safe('backup-upload', backupUpload)
     safe('clear-cache', clearCache)
