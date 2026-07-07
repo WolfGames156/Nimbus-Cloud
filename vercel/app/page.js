@@ -8,7 +8,7 @@ export default function Home() {
         <h1 style={{fontSize:32, fontWeight:600, marginBottom:8}}>Nimbus<span style={{color:'#8b949e'}}>Cloud</span></h1>
         <p style={{color:'#8b949e', marginBottom:32, fontSize:14}}>Private desktop cloud storage</p>
         <div style={{display:'flex', gap:12}}>
-          <a href="https://github.com" style={{padding:'12px 24px',background:'#58a6ff',color:'#fff',borderRadius:8,textDecoration:'none',fontWeight:500}}>Get Started</a>
+          <a href="https://github.com/WolfGames156/Nimbus-Cloud" style={{padding:'12px 24px',background:'#58a6ff',color:'#fff',borderRadius:8,textDecoration:'none',fontWeight:500}}>Get Started</a>
         </div>
       </main>
     </div>

@@ -1,36 +1,20 @@
 const $ = id => document.getElementById(id)
 let selectedFiles = new Set()
 let thumbCache = {}
+let currentFolder = ''
 
-function loadThumbCache() {
-  try { thumbCache = JSON.parse(localStorage.getItem('thumbCache') || '{}') } catch { thumbCache = {} }
-}
-function saveThumbCache() {
-  try { localStorage.setItem('thumbCache', JSON.stringify(thumbCache)) } catch {}
-}
-
-function loadFileCache() {
-  try { return JSON.parse(localStorage.getItem('fileCache') || '[]') } catch { return [] }
-}
-function saveFileCache(files) {
-  try { localStorage.setItem('fileCache', JSON.stringify(files)) } catch {}
-}
-
-function loadToken() {
-  try { return localStorage.getItem('github_token') || null } catch { return null }
-}
-function saveToken(token) {
-  try { localStorage.setItem('github_token', token) } catch {}
-}
-function clearToken() {
-  try { localStorage.removeItem('github_token') } catch {}
-}
+function loadThumbCache() { try { thumbCache = JSON.parse(localStorage.getItem('thumbCache') || '{}') } catch { thumbCache = {} } }
+function saveThumbCache() { try { localStorage.setItem('thumbCache', JSON.stringify(thumbCache)) } catch {} }
+function loadFileCache() { try { return JSON.parse(localStorage.getItem('fileCache') || '{}') } catch { return {} } }
+function saveFileCache(data) { try { localStorage.setItem('fileCache', JSON.stringify(data)) } catch {} }
+function loadToken() { try { return localStorage.getItem('github_token') || null } catch { return null } }
+function saveToken(token) { try { localStorage.setItem('github_token', token) } catch {} }
+function clearToken() { try { localStorage.removeItem('github_token') } catch {} }
 
 const texts = {
-  TR: { files: 'Dosyalar', ready: 'Hazır', uploading: 'Yükleniyor...', empty: 'Henüz dosya yok', preview: 'Önizle', download: 'İndir', del: 'Sil', confirm: 'Silinsin mi?', rename: 'Yeniden adlandır', renameConfirm: 'Yeni isim:' },
-  EN: { files: 'Files', ready: 'Ready', uploading: 'Loading...', empty: 'No files yet', preview: 'Preview', download: 'Download', del: 'Delete', confirm: 'Delete?', rename: 'Rename', renameConfirm: 'New name:' },
+  TR: { files: 'Dosyalar', folders: 'Klasorler', empty: 'Henuz dosya yok', preview: 'Onizle', download: 'Indir', del: 'Sil', confirm: 'Silinsin mi?', rename: 'Yeniden adlandir', newFolder: 'Yeni klasor', folderName: 'Klasor adi...', move: 'Tasi', moveHere: 'Buraya tasi' },
+  EN: { files: 'Files', folders: 'Folders', empty: 'No files yet', preview: 'Preview', download: 'Download', del: 'Delete', confirm: 'Delete?', rename: 'Rename', newFolder: 'New folder', folderName: 'Folder name...', move: 'Move', moveHere: 'Move here' },
 }
-
 function lang() { return 'TR' }
 function t(k) { return texts[lang()][k] }
 function fmt(n) {
@@ -40,46 +24,17 @@ function fmt(n) {
   return `${n} B`
 }
 function eta(s) { s = Math.max(0, Math.round(s)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` }
-function ext(name) { const value = name.split('.').pop(); return value && value !== name ? value.slice(0, 5).toUpperCase() : 'FILE' }
-function fileVisual(file) {
-  if (file.type.startsWith('image/')) {
-    const name = encodeURIComponent(file.name)
-    const cached = thumbCache[name]
-    if (cached) {
-      return `<div class="thumb image-thumb" data-name="${name}"><img src="${cached}"></div>`
-    }
-    return `<div class="thumb image-thumb" data-name="${name}"><span>${ext(file.name)}</span></div>`
-  }
-  return `<div class="thumb"><span>${ext(file.name)}</span></div>`
-}
-function canPreview(file) { return file.type.startsWith('image/') || file.type.startsWith('video/') }
+function ext(name) { const v = name.split('.').pop(); return v && v !== name ? v.slice(0, 5).toUpperCase() : 'FILE' }
 
-function fileActions(file) {
-  const name = encodeURIComponent(file.name)
-  const checked = selectedFiles.has(file.name) ? 'checked' : ''
-  const previewButton = canPreview(file) ? `<button onclick="preview('${name}')" title="${t('preview')}">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-  </button>` : ''
-  return `${previewButton}<button onclick="download('${name}')" title="${t('download')}">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-  </button><button onclick="renameFile('${name}')" title="${t('rename')}">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-  </button><button class="danger" onclick="removeFile('${name}')" title="${t('del')}">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-  </button>`
-}
-
-async function call(fn, target = $('fileStatus')) {
+async function call(fn, target) {
+  if (!target) target = $('fileStatus')
   try {
     const res = await fn()
     if (res && typeof res === 'object' && res.ok === false) {
-      const message = res.error || 'Hata'
-      if (target) target.textContent = message
+      if (target) target.textContent = res.error || 'Hata'
       return null
     }
-    if (res && typeof res === 'object' && 'data' in res) {
-      return res.data
-    }
+    if (res && typeof res === 'object' && 'data' in res) return res.data
     return res
   } catch (e) {
     console.error('Call error:', e)
@@ -88,49 +43,80 @@ async function call(fn, target = $('fileStatus')) {
   }
 }
 
-async function showApp(username) {
-  $('who').textContent = username
-  $('auth').classList.add('hidden')
-  $('app').classList.remove('hidden')
-
-  const cached = loadFileCache()
-  if (cached.length) render(cached)
-
-  const fresh = await call(() => window.nimbus.list())
-  if (fresh) {
-    render(fresh)
-    saveFileCache(fresh)
+function fileIcon(file) {
+  if (file.type && file.type.startsWith('image/')) {
+    const name = encodeURIComponent(file.name)
+    const cached = thumbCache[name]
+    if (cached) return `<div class="thumb image-thumb" data-name="${name}"><img src="${cached}"></div>`
+    return `<div class="thumb image-thumb" data-name="${name}"><span>${ext(file.name)}</span></div>`
   }
+  return `<div class="thumb"><span>${ext(file.name)}</span></div>`
 }
 
-function render(files) {
-  window.currentFiles = files
+function canPreview(file) { return file.type && (file.type.startsWith('image/') || file.type.startsWith('video/')) }
+
+function fileActions(file) {
+  const name = encodeURIComponent(file.name)
+  const folder = encodeURIComponent(file.folder || '')
+  const p = canPreview(file) ? `<button onclick="preview('${name}','${folder}')" title="${t('preview')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''
+  return `${p}<button onclick="downloadFile('${name}','${folder}')" title="${t('download')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button><button onclick="renameFile('${name}','${folder}')" title="${t('rename')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="danger" onclick="removeFile('${name}','${folder}')" title="${t('del')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>`
+}
+
+function render(data) {
+  if (!data || !data.files) return
+  window.currentData = data
   const query = ($('search')?.value || '').toLowerCase()
-  const visible = files.filter(file => file.name.toLowerCase().includes(query))
-  const total = files.reduce((sum, file) => sum + file.size, 0)
-  $('fileStatus').textContent = `${files.length} dosya · ${fmt(total)} kullanılan alan`
+  const folders = (data.folders || []).filter(f => (f.folder || '') === currentFolder)
+  const files = data.files.filter(f => (f.folder || '') === currentFolder && f.name.toLowerCase().includes(query))
+  const total = data.files.reduce((s, f) => s + f.size, 0)
+  $('fileStatus').textContent = `${data.files.length} dosya, ${folders.length} klasor · ${fmt(total)} alan`
 
   const hasSelection = selectedFiles.size > 0
   $('bulkToolbar').classList.toggle('hidden', !hasSelection)
-  $('selectedCount').textContent = `${selectedFiles.size} dosya seçildi`
+  $('selectedCount').textContent = `${selectedFiles.size} secili`
 
-  $('files').innerHTML = visible.length ? visible.map(f => {
-    const isSelected = selectedFiles.has(f.name)
-    return `<article class="file${isSelected ? ' selected' : ''}" data-name="${f.name}">
-      <input type="checkbox" class="file-select" ${isSelected ? 'checked' : ''} onchange="toggleSelect('${f.name}', this.checked)">
-      ${fileVisual(f)}
+  let html = ''
+  if (currentFolder) {
+    html += `<article class="file folder-item" onclick="navigateUp()"><div class="thumb"><span>..</span></div><div class="name">Geri</div></article>`
+  }
+  html += `<article class="file folder-item" onclick="promptNewFolder()"><div class="thumb"><span>+</span></div><div class="name">${t('newFolder')}</div></article>`
+
+  for (const folder of folders) {
+    const enc = encodeURIComponent(folder.name)
+    html += `<article class="file folder-item" ondblclick="navigateFolder('${enc}')">
+      <div class="thumb"><span style="font-size:28px">&#128193;</span></div>
+      <div class="name" title="${folder.name}">${folder.name}</div>
+      <div class="actions">
+        <button onclick="event.stopPropagation();renameFolderUI('${enc}')" title="Yeniden adlandir"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="danger" onclick="event.stopPropagation();removeFolder('${enc}')" title="Sil"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+      </div>
+    </article>`
+  }
+
+  for (const f of files) {
+    const isSelected = selectedFiles.has(f.name + '|' + (f.folder || ''))
+    html += `<article class="file${isSelected ? ' selected' : ''}" data-name="${f.name}">
+      <input type="checkbox" class="file-select" ${isSelected ? 'checked' : ''} onchange="toggleSelect('${encodeURIComponent(f.name)}','${encodeURIComponent(f.folder||'')}', this.checked)">
+      ${fileIcon(f)}
       <div class="name" title="${f.name}">${f.name}</div>
-      <div class="meta">${fmt(f.size)} · ${f.sha256.slice(0, 10)}</div>
+      <div class="meta">${fmt(f.size)} · ${f.sha256 ? f.sha256.slice(0, 10) : ''}</div>
       <div class="actions">${fileActions(f)}</div>
     </article>`
-  }).join('') : `<p class="sub">${t('empty')}</p>`
+  }
+
+  if (!folders.length && !files.length && !currentFolder) {
+    html += `<p class="sub">${t('empty')}</p>`
+  }
+
+  $('files').innerHTML = html
   hydrateThumbs()
 }
 
-function toggleSelect(name, checked) {
-  if (checked) selectedFiles.add(name)
-  else selectedFiles.delete(name)
-  render(window.currentFiles || [])
+function toggleSelect(encodedName, encodedFolder, checked) {
+  const key = decodeURIComponent(encodedName) + '|' + decodeURIComponent(encodedFolder)
+  if (checked) selectedFiles.add(key)
+  else selectedFiles.delete(key)
+  render(window.currentData || { files: [], folders: [] })
 }
 
 async function hydrateThumbs() {
@@ -140,7 +126,7 @@ async function hydrateThumbs() {
       if (!el.querySelector('img')) el.innerHTML = `<img src="${thumbCache[name]}">`
       continue
     }
-    const result = await call(() => window.nimbus.cachePreview(decodeURIComponent(name)), null)
+    const result = await call(() => window.nimbus.preview({ filename: decodeURIComponent(name), folder: '' }), null)
     if (result && result.path) {
       const src = `file:///${result.path.replaceAll('\\\\', '/').replaceAll('\\', '/')}`
       thumbCache[name] = src
@@ -154,7 +140,7 @@ function showPage(page) {
   document.querySelectorAll('.page').forEach(el => el.classList.remove('active-page'))
   document.querySelectorAll('.nav-btn').forEach(el => el.classList.toggle('active', el.dataset.page === page))
   $(`page-${page}`).classList.add('active-page')
-  $('pageTitle').textContent = page === 'files' ? 'Dosyalar' : page === 'backups' ? 'Yedekler' : 'Ayarlar'
+  $('pageTitle').textContent = page === 'files' ? t('files') : page === 'backups' ? 'Yedekler' : 'Ayarlar'
 }
 
 function toggleSidebar() {
@@ -168,39 +154,114 @@ async function syncFiles() {
   if (btn.classList.contains('syncing')) return
   btn.classList.add('syncing')
   $('fileStatus').textContent = 'Senkronize ediliyor...'
-  const files = await call(() => window.nimbus.list())
-  if (files) { render(files); saveFileCache(files) }
+  const data = await call(() => window.nimbus.list())
+  if (data) { render(data); saveFileCache(data) }
   btn.classList.remove('syncing')
 }
 
-async function upload() { showToast('Dosya yükleniyor'); const files = await call(() => window.nimbus.upload()); if (files) { render(files); saveFileCache(files); showPage('files') } }
-async function uploadDropped(paths) { showToast('Dosya yükleniyor'); const files = await call(() => window.nimbus.uploadPaths(paths)); if (files) { render(files); saveFileCache(files); showPage('files') } }
+async function showApp(username) {
+  $('who').textContent = username
+  $('auth').classList.add('hidden')
+  $('app').classList.remove('hidden')
+  currentFolder = ''
+  const cached = loadFileCache()
+  if (cached && cached.files) render(cached)
+  const fresh = await call(() => window.nimbus.list())
+  if (fresh) { render(fresh); saveFileCache(fresh) }
+}
 
-async function preview(name) {
-  const result = await call(() => window.nimbus.preview(decodeURIComponent(name)))
+function navigateFolder(encodedName) {
+  currentFolder = decodeURIComponent(encodedName)
+  selectedFiles.clear()
+  render(window.currentData || { files: [], folders: [] })
+}
+
+function navigateUp() {
+  const parts = currentFolder.split('/')
+  parts.pop()
+  currentFolder = parts.join('/')
+  selectedFiles.clear()
+  render(window.currentData || { files: [], folders: [] })
+}
+
+function promptNewFolder() {
+  $('newFolderName').value = ''
+  $('newFolderModal').classList.remove('hidden')
+  $('newFolderName').focus()
+}
+
+async function doNewFolder() {
+  const name = $('newFolderName').value.trim()
+  if (!name) { $('newFolderModal').classList.add('hidden'); return }
+  $('newFolderModal').classList.add('hidden')
+  const data = await call(() => window.nimbus.createFolder(name))
+  if (data) { render(data); saveFileCache(data) }
+}
+
+async function removeFolder(encodedName) {
+  const name = decodeURIComponent(encodedName)
+  if (!confirm(`"${name}" klasoru ve icerigi silinecek. Emin misin?`)) return
+  const data = await call(() => window.nimbus.deleteFolder(name))
+  if (data) { render(data); saveFileCache(data) }
+}
+
+async function renameFolderUI(encodedName) {
+  const oldName = decodeURIComponent(encodedName)
+  $('renameFolderOld').value = oldName
+  $('renameFolderNew').value = oldName
+  $('renameFolderModal').classList.remove('hidden')
+  $('renameFolderNew').focus()
+  $('renameFolderNew').select()
+}
+
+async function doRenameFolder() {
+  const oldName = $('renameFolderOld').value
+  const newName = $('renameFolderNew').value.trim()
+  if (!newName || newName === oldName) { $('renameFolderModal').classList.add('hidden'); return }
+  $('renameFolderModal').classList.add('hidden')
+  const data = await call(() => window.nimbus.renameFolder({ oldName, newName }))
+  if (data) { render(data); saveFileCache(data) }
+}
+
+async function upload() {
+  showToast('Dosya yukleniyor')
+  const data = await call(() => window.nimbus.upload())
+  if (data) { render(data); saveFileCache(data); showPage('files') }
+}
+
+async function uploadDropped(paths) {
+  showToast('Dosya yukleniyor')
+  const data = await call(() => window.nimbus.uploadPaths({ paths, folder: currentFolder }))
+  if (data) { render(data); saveFileCache(data); showPage('files') }
+}
+
+async function preview(name, folder) {
+  const result = await call(() => window.nimbus.preview({ filename: decodeURIComponent(name), folder: decodeURIComponent(folder || '') }))
   if (!result) return
   $('previewTitle').textContent = result.name
   const src = `file:///${result.path.replaceAll('\\\\', '/').replaceAll('\\', '/')}`
-  $('previewBody').innerHTML = result.type.startsWith('video/') ? `<video src="${src}" controls autoplay></video>` : result.type.startsWith('image/') ? `<img src="${src}">` : `<p class="sub">Önizleme yok</p>`
+  $('previewBody').innerHTML = result.type.startsWith('video/') ? `<video src="${src}" controls autoplay></video>` : result.type.startsWith('image/') ? `<img src="${src}">` : `<p class="sub">Onizleme yok</p>`
   $('previewModal').classList.remove('hidden')
 }
 
-async function download(name) { await call(() => window.nimbus.download(decodeURIComponent(name))) }
+async function downloadFile(name, folder) {
+  await call(() => window.nimbus.download({ filename: decodeURIComponent(name), folder: decodeURIComponent(folder || '') }))
+}
 
-async function removeFile(name) {
+async function removeFile(name, folder) {
   if (confirm(t('confirm'))) {
-    selectedFiles.delete(decodeURIComponent(name))
-    const files = await call(() => window.nimbus.delete(decodeURIComponent(name)))
-    if (files) { render(files); saveFileCache(files) }
+    const data = await call(() => window.nimbus.delete({ filename: decodeURIComponent(name), folder: decodeURIComponent(folder || '') }))
+    if (data) { render(data); saveFileCache(data) }
   }
 }
 
 let pendingRenameName = ''
+let pendingRenameFolder = ''
 
-async function renameFile(encodedName) {
-  const oldName = decodeURIComponent(encodedName)
-  pendingRenameName = oldName
-  $('renameInput').value = oldName
+async function renameFile(encodedName, encodedFolder) {
+  pendingRenameName = decodeURIComponent(encodedName)
+  pendingRenameFolder = decodeURIComponent(encodedFolder || '')
+  $('renameInput').value = pendingRenameName
   $('renameModal').classList.remove('hidden')
   $('renameInput').focus()
   $('renameInput').select()
@@ -214,69 +275,62 @@ async function doRename() {
   const newName = $('renameInput').value.trim()
   if (!newName || newName === pendingRenameName) { $('renameModal').classList.add('hidden'); return }
   const oldName = pendingRenameName
+  const folder = pendingRenameFolder
   $('renameModal').classList.add('hidden')
   pendingRenameName = ''
-
-  if (window.currentFiles) {
-    const optimistic = window.currentFiles.map(f => f.name === oldName ? { ...f, name: newName } : f)
-    render(optimistic)
-    saveFileCache(optimistic)
-  }
-
-  const result = await call(() => window.nimbus.rename({ oldName, newName }))
-  if (result) { render(result); saveFileCache(result) }
+  pendingRenameFolder = ''
+  const data = await call(() => window.nimbus.rename({ oldName, newName, folder }))
+  if (data) { render(data); saveFileCache(data) }
 }
 
 async function bulkDownload() {
-  for (const name of selectedFiles) {
-    await call(() => window.nimbus.download(name))
+  for (const key of selectedFiles) {
+    const [name, folder] = key.split('|')
+    await call(() => window.nimbus.download({ filename: name, folder }))
   }
   selectedFiles.clear()
-  render(window.currentFiles || [])
+  render(window.currentData || { files: [], folders: [] })
 }
 
 async function bulkDelete() {
-  if (!confirm(`${selectedFiles.size} dosya silinecek. Emin misin?`)) return
-  const names = [...selectedFiles]
+  if (!confirm(`${selectedFiles.size} ogeler silinecek. Emin misin?`)) return
+  const items = [...selectedFiles].map(k => { const [name, folder] = k.split('|'); return { name, folder } })
   selectedFiles.clear()
-  const files = await call(() => window.nimbus.bulkDelete(names))
-  if (files) { render(files); saveFileCache(files) }
+  const data = await call(() => window.nimbus.bulkDelete(items))
+  if (data) { render(data); saveFileCache(data) }
 }
 
-function showToast(title) {
-  $('toastTitle').textContent = title
-  $('transferToast').classList.remove('hidden')
-}
-function hideToastLater() {
-  setTimeout(() => $('transferToast').classList.add('hidden'), 1800)
-}
+function showToast(title) { $('toastTitle').textContent = title; $('transferToast').classList.remove('hidden') }
+function hideToastLater() { setTimeout(() => $('transferToast').classList.add('hidden'), 1800) }
 
-document.getElementById('githubLoginBtn').onclick = () => {
-  window.nimbus.githubLogin();
-}
+$('githubLoginBtn').onclick = () => window.nimbus.githubLogin()
 $('upload').onclick = upload
 $('refresh').onclick = syncFiles
 $('backupDown').onclick = () => call(() => window.nimbus.backupDownload())
-$('backupUp').onclick = async () => { const files = await call(() => window.nimbus.backupUpload()); if (files) { render(files); saveFileCache(files) } }
+$('backupUp').onclick = async () => { const data = await call(() => window.nimbus.backupUpload()); if (data) { render(data); saveFileCache(data) } }
 $('logout').onclick = () => { clearToken(); location.reload() }
 $('settingsLang').onchange = async () => { $('settingsLang').value = 'TR'; await call(() => window.nimbus.setSettings({ lang: 'TR' }), null) }
 $('settingsTheme').onchange = async () => { document.body.dataset.theme = $('settingsTheme').value; await call(() => window.nimbus.setSettings({ theme: $('settingsTheme').value }), null) }
 $('clearCache').onclick = () => { localStorage.removeItem('fileCache'); localStorage.removeItem('thumbCache'); thumbCache = {}; call(() => window.nimbus.clearCache()) }
 $('openCache').onclick = () => call(() => window.nimbus.openCache())
 $('closePreview').onclick = () => $('previewModal').classList.add('hidden')
-$('search').oninput = () => render(window.currentFiles || [])
+$('search').oninput = () => render(window.currentData || { files: [], folders: [] })
 $('bulkDownload').onclick = bulkDownload
 $('bulkDelete').onclick = bulkDelete
-$('bulkClear').onclick = () => { selectedFiles.clear(); render(window.currentFiles || []) }
-document.querySelectorAll('.nav-btn[data-page]').forEach(btn => btn.onclick = () => showPage(btn.dataset.page))
+$('bulkClear').onclick = () => { selectedFiles.clear(); render(window.currentData || { files: [], folders: [] }) }
+$('newFolderConfirm').onclick = doNewFolder
+$('newFolderCancel').onclick = () => $('newFolderModal').classList.add('hidden')
+$('newFolderName').onkeydown = e => { if (e.key === 'Enter') doNewFolder(); if (e.key === 'Escape') $('newFolderModal').classList.add('hidden') }
+$('renameFolderConfirm').onclick = doRenameFolder
+$('renameFolderCancel').onclick = () => $('renameFolderModal').classList.add('hidden')
+$('renameFolderNew').onkeydown = e => { if (e.key === 'Enter') doRenameFolder(); if (e.key === 'Escape') $('renameFolderModal').classList.add('hidden') }
+document.querySelectorAll('.nav-btn[data-page]').forEach(btn => btn.onclick = () => { currentFolder = ''; selectedFiles.clear(); showPage(btn.dataset.page); if (btn.dataset.page === 'files') syncFiles() })
 $('sidebarToggle').onclick = toggleSidebar
 $('winMinimize').onclick = () => window.nimbus.winMinimize()
 $('winMaximize').onclick = () => window.nimbus.winMaximize()
 $('winClose').onclick = () => window.nimbus.winClose()
-window.addEventListener('dragover', event => {
-  event.preventDefault()
-  $('dropOverlay').classList.add('active')
-})
+
+window.addEventListener('dragover', event => { event.preventDefault(); $('dropOverlay').classList.add('active') })
 window.addEventListener('dragleave', event => {
   if (event.clientX <= 0 || event.clientY <= 0 || event.clientX >= innerWidth || event.clientY >= innerHeight) $('dropOverlay').classList.remove('active')
 })
@@ -286,6 +340,7 @@ window.addEventListener('drop', event => {
   const paths = [...event.dataTransfer.files].map(file => file.path).filter(Boolean)
   if (paths.length) uploadDropped(paths)
 })
+
 window.nimbus.onProgress(p => {
   const pct = p.total ? (p.done / p.total) * 100 : 0
   showToast(p.name)
@@ -313,29 +368,15 @@ async function init() {
     document.body.dataset.theme = settings.theme || 'Siyah'
     $('settingsTheme').value = settings.theme || 'Siyah'
     showPage('files')
-
-    if (settings.sidebarClosed) {
-      $('app').classList.add('sidebar-closed')
-      $('sidebarToggle').classList.add('active')
-    }
-
+    if (settings.sidebarClosed) { $('app').classList.add('sidebar-closed'); $('sidebarToggle').classList.add('active') }
     const token = loadToken()
     if (token) {
       const isValid = await call(() => window.nimbus.validateToken(token), null)
       if (isValid) {
         const username = await call(() => window.nimbus.getUser(token), null)
-        if (username) {
-          showApp(username)
-        } else {
-          clearToken()
-        }
-      } else {
-        clearToken()
-      }
+        if (username) { showApp(username) } else { clearToken() }
+      } else { clearToken() }
     }
-  } catch (e) {
-    console.error('Init error:', e)
-    showPage('files')
-  }
+  } catch (e) { console.error('Init error:', e); showPage('files') }
 }
 init()

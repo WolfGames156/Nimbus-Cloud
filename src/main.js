@@ -4,7 +4,7 @@ const os = require('os')
 const path = require('path')
 const crypto = require('crypto')
 const https = require('https')
-const { TOKEN_KEY, TOKEN_XOR_HEX, REPO, MIRROR_REPOS, DB_TAG, BLOB_TAG, CHUNK_SIZE } = require('./config')
+const { MIRROR_REPOS, DB_TAG, BLOB_TAG, CHUNK_SIZE } = require('./config')
 
 let win
 let session = null
@@ -68,10 +68,7 @@ async function validateToken(token) {
 function storageToken() {
   if (process.env.NIMBUS_GITHUB_TOKEN) return process.env.NIMBUS_GITHUB_TOKEN
   if (oauthToken) return oauthToken
-  if (!TOKEN_XOR_HEX) throw new Error('Token yok')
-  const data = Buffer.from(TOKEN_XOR_HEX, 'hex')
-  const key = Buffer.from(TOKEN_KEY)
-  return Buffer.from(data.map((b, i) => b ^ key[i % key.length])).toString()
+  throw new Error('Token yok')
 }
 
 async function gh(method, url, body, headers = {}) {
@@ -97,10 +94,11 @@ async function owner() {
 }
 
 function repos() {
+  const REPO = require('./config').REPO
   return [REPO, ...MIRROR_REPOS]
 }
 
-async function ensureRepo(ownerName, repo = REPO) {
+async function ensureRepo(ownerName, repo) {
   try {
     return await gh('GET', `https://api.github.com/repos/${ownerName}/${repo}`)
   } catch {
@@ -108,7 +106,7 @@ async function ensureRepo(ownerName, repo = REPO) {
   }
 }
 
-async function ensureInitialCommit(ownerName, repo = REPO) {
+async function ensureInitialCommit(ownerName, repo) {
   try {
     await gh('GET', `https://api.github.com/repos/${ownerName}/${repo}/contents/.nimbuskeep`)
   } catch {
@@ -116,7 +114,7 @@ async function ensureInitialCommit(ownerName, repo = REPO) {
   }
 }
 
-async function release(ownerName, tag, repo = REPO) {
+async function release(ownerName, tag, repo) {
   await ensureInitialCommit(ownerName, repo)
   try {
     return await gh('GET', `https://api.github.com/repos/${ownerName}/${repo}/releases/tags/${tag}`)
@@ -125,11 +123,11 @@ async function release(ownerName, tag, repo = REPO) {
   }
 }
 
-async function deleteAsset(ownerName, id, repo = REPO) {
+async function deleteAsset(ownerName, id, repo) {
   await gh('DELETE', `https://api.github.com/repos/${ownerName}/${repo}/releases/assets/${id}`)
 }
 
-async function uploadAsset(ownerName, rel, filePath, name, repo = REPO, progress = null) {
+async function uploadAsset(ownerName, rel, filePath, name, repo, progress = null) {
   const old = rel.assets.find(a => a.name === name)
   if (old) await deleteAsset(ownerName, old.id, repo)
   const stat = fs.statSync(filePath)
@@ -158,15 +156,13 @@ async function uploadAsset(ownerName, rel, filePath, name, repo = REPO, progress
     })
     req.on('error', reject)
     const stream = fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 })
-    stream.on('data', chunk => {
-      if (progress) progress(chunk.length)
-    })
+    stream.on('data', chunk => { if (progress) progress(chunk.length) })
     stream.on('error', reject)
     stream.pipe(req)
   })
 }
 
-async function downloadAsset(ownerName, id, filePath, repo = REPO) {
+async function downloadAsset(ownerName, id, filePath, repo) {
   const data = await gh('GET', `https://api.github.com/repos/${ownerName}/${repo}/releases/assets/${id}`, null, { Accept: 'application/octet-stream' })
   fs.writeFileSync(filePath, data)
 }
@@ -188,12 +184,8 @@ function hashFile(filePath) {
   return h.digest('hex')
 }
 
-function passHash(password, salt = crypto.randomBytes(16).toString('hex')) {
-  const hash = crypto.pbkdf2Sync(password, salt, 200000, 32, 'sha256').toString('hex')
-  return { salt, hash }
-}
-
 async function loadDb(ownerName) {
+  const REPO = require('./config').REPO
   let lastError = null
   for (const repo of repos()) {
     try {
@@ -209,10 +201,11 @@ async function loadDb(ownerName) {
     }
   }
   if (lastError && !String(lastError.message).includes('404')) throw lastError
-  return { users: [], files: [] }
+  return { files: [], folders: [] }
 }
 
 async function saveDb(ownerName, db) {
+  const REPO = require('./config').REPO
   const tmp = path.join(os.tmpdir(), `nimbus-db-${Date.now()}.json`)
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2))
   for (const repo of repos()) {
@@ -226,42 +219,6 @@ async function saveDb(ownerName, db) {
   }
 }
 
-function requireUser(db, username, password) {
-  const user = db.users.find(u => u.username === username)
-  if (!user) {
-    const p = passHash(password || crypto.randomBytes(16).toString('hex'))
-    db.users.push({ username, salt: p.salt, hash: p.hash, createdAt: Date.now() })
-    return
-  }
-  if (password && passHash(password, user.salt).hash !== user.hash) throw new Error('Sifre yanlis')
-}
-
-function sendProgress(done, total, name, started) {
-  const elapsed = Math.max((Date.now() - started) / 1000, 0.001)
-  const speed = done / elapsed
-  const eta = speed ? Math.max((total - done) / speed, 0) : 0
-  win.webContents.send('progress', { done, total, name, speed, eta })
-}
-
-async function register(_, { username, password }) {
-  const ownerName = await owner()
-  const db = await loadDb(ownerName)
-  if (db.users.some(u => u.username === username)) throw new Error('Kullanıcı zaten var')
-  const p = passHash(password)
-  db.users.push({ username, salt: p.salt, hash: p.hash, createdAt: Date.now() })
-  await saveDb(ownerName, db)
-  session = { owner: ownerName, username, password }
-  return listFiles()
-}
-
-async function login(_, { username, password }) {
-  const ownerName = await owner()
-  const db = await loadDb(ownerName)
-  requireUser(db, username, password)
-  session = { owner: ownerName, username, password }
-  return listFiles()
-}
-
 function requireSession() {
   if (!session) throw new Error('Once GitHub ile giris yapin')
   return session
@@ -270,8 +227,9 @@ function requireSession() {
 async function listFiles() {
   const s = requireSession()
   const db = await loadDb(s.owner)
-  requireUser(db, s.username, s.password)
-  return db.files.filter(f => f.username === s.username).map(f => ({ name: f.filename, size: f.size, sha256: f.sha256, type: f.type }))
+  const files = db.files.filter(f => f.username === s.username).map(f => ({ name: f.filename, size: f.size, sha256: f.sha256, type: f.type, folder: f.folder || '' }))
+  const folders = (db.folders || []).filter(f => f.username === s.username).map(f => ({ name: f.name, folder: f.parent || '' }))
+  return { files, folders }
 }
 
 async function pickUpload() {
@@ -280,21 +238,14 @@ async function pickUpload() {
   return uploadPaths(null, res.filePaths)
 }
 
-async function uploadPaths(_, filePaths) {
+async function uploadPaths(_, filePaths, folder = '') {
   const s = requireSession()
   const db = await loadDb(s.owner)
-  requireUser(db, s.username, s.password)
-  const rel = await release(s.owner, BLOB_TAG)
-  const mirrorRels = []
-  for (const repo of MIRROR_REPOS) {
-    try {
-      await ensureRepo(s.owner, repo)
-      mirrorRels.push([repo, await release(s.owner, BLOB_TAG, repo)])
-    } catch {}
-  }
-  for (const filePath of filePaths.filter(filePath => fs.existsSync(filePath) && fs.statSync(filePath).isFile())) {
-    const stat = fs.statSync(filePath)
-    const filename = path.basename(filePath)
+  const REPO = require('./config').REPO
+  const rel = await release(s.owner, BLOB_TAG, REPO)
+  for (const fp of filePaths.filter(fp => fs.existsSync(fp) && fs.statSync(fp).isFile())) {
+    const stat = fs.statSync(fp)
+    const filename = path.basename(fp)
     const parts = []
     let index = 1
     let done = 0
@@ -302,7 +253,7 @@ async function uploadPaths(_, filePaths) {
     while (done < stat.size) {
       const size = Math.min(CHUNK_SIZE, stat.size - done)
       const partPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-${index}.part`)
-      await writePart(filePath, partPath, done, size)
+      await writePart(fp, partPath, done, size)
       const partHash = hashFile(partPath)
       const assetName = `${s.username}__${filename}.part${String(index).padStart(4, '0')}`
       let uploadedPart = 0
@@ -310,33 +261,19 @@ async function uploadPaths(_, filePaths) {
         uploadedPart += bytes
         sendProgress(done + uploadedPart, stat.size, filename, started)
       })
-      const mirrors = []
-      for (const [repo, mirrorRel] of mirrorRels) {
-        try {
-          const mirrorAsset = await uploadAsset(s.owner, mirrorRel, partPath, assetName, repo)
-          mirrors.push({ repo, assetId: mirrorAsset.id })
-        } catch {}
-      }
-      parts.push({ index, assetId: asset.id, mirrors, name: asset.name, size, sha256: partHash })
+      parts.push({ index, assetId: asset.id, name: asset.name, size, sha256: partHash })
       done += size
       sendProgress(done, stat.size, filename, started)
       fs.rmSync(partPath, { force: true })
       index++
     }
-    const manifest = { filename, size: stat.size, sha256: hashFile(filePath), type: mime(filename), parts }
+    const manifest = { filename, size: stat.size, sha256: hashFile(fp), type: mime(filename), parts }
     const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
     fs.writeFileSync(manifestPath, JSON.stringify(manifest))
     const manifestName = `${s.username}__${filename}.manifest.json`
-    const asset = await uploadAsset(s.owner, rel, manifestPath, manifestName)
-    const manifestMirrors = []
-    for (const [repo, mirrorRel] of mirrorRels) {
-      try {
-        const mirrorAsset = await uploadAsset(s.owner, mirrorRel, manifestPath, manifestName, repo)
-        manifestMirrors.push({ repo, assetId: mirrorAsset.id })
-      } catch {}
-    }
-    db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename))
-    db.files.push({ username: s.username, filename, size: stat.size, sha256: manifest.sha256, type: manifest.type, manifestAssetId: asset.id, manifestMirrors, createdAt: Date.now() })
+    const asset = await uploadAsset(s.owner, rel, manifestPath, manifestName, REPO)
+    db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename && (f.folder || '') === folder))
+    db.files.push({ username: s.username, filename, folder, size: stat.size, sha256: manifest.sha256, type: manifest.type, manifestAssetId: asset.id, createdAt: Date.now() })
   }
   await saveDb(s.owner, db)
   return listFiles()
@@ -362,9 +299,7 @@ async function getSettings() {
     const raw = fs.readFileSync(file, 'utf8')
     const parsed = JSON.parse(raw)
     return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {}
-  } catch {
-    return {}
-  }
+  } catch { return {} }
 }
 
 async function setSettings(_, data) {
@@ -384,11 +319,10 @@ function cacheDir() {
   return dir
 }
 
-async function downloadNamed(_, { filename, preview = false }) {
+async function downloadNamed(_, { filename, folder, preview = false }) {
   const s = requireSession()
   const db = await loadDb(s.owner)
-  requireUser(db, s.username, s.password)
-  const file = db.files.find(f => f.username === s.username && f.filename === filename)
+  const file = db.files.find(f => f.username === s.username && f.filename === filename && (f.folder || '') === (folder || ''))
   if (!file) throw new Error('Dosya yok')
   const targetDir = preview ? cacheDir() : (await dialog.showOpenDialog(win, { properties: ['openDirectory'] })).filePaths[0]
   if (!targetDir) return null
@@ -398,17 +332,7 @@ async function downloadNamed(_, { filename, preview = false }) {
   const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
   try {
     await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
-  } catch (error) {
-    let ok = false
-    for (const mirror of file.manifestMirrors || []) {
-      try {
-        await downloadAsset(s.owner, mirror.assetId, manifestPath, mirror.repo)
-        ok = true
-        break
-      } catch {}
-    }
-    if (!ok) throw error
-  }
+  } catch (error) { throw error }
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
   const out = preview ? cached : path.join(targetDir, manifest.filename)
   const started = Date.now()
@@ -416,19 +340,7 @@ async function downloadNamed(_, { filename, preview = false }) {
   fs.writeFileSync(out, '')
   for (const part of manifest.parts) {
     const partPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-${part.index}.part`)
-    try {
-      await downloadAsset(s.owner, part.assetId, partPath)
-    } catch (error) {
-      let ok = false
-      for (const mirror of part.mirrors || []) {
-        try {
-          await downloadAsset(s.owner, mirror.assetId, partPath, mirror.repo)
-          ok = true
-          break
-        } catch {}
-      }
-      if (!ok) throw error
-    }
+    await downloadAsset(s.owner, part.assetId, partPath)
     fs.appendFileSync(out, fs.readFileSync(partPath))
     done += part.size
     sendProgress(done, manifest.size, manifest.filename, started)
@@ -436,29 +348,29 @@ async function downloadNamed(_, { filename, preview = false }) {
   return preview ? { path: out, type: file.type, name: filename } : out
 }
 
-async function deleteNamed(_, filename) {
+async function deleteNamed(_, { filename, folder }) {
   const s = requireSession()
   const db = await loadDb(s.owner)
-  requireUser(db, s.username, s.password)
-  const file = db.files.find(f => f.username === s.username && f.filename === filename)
+  const file = db.files.find(f => f.username === s.username && f.filename === filename && (f.folder || '') === (folder || ''))
   if (!file) throw new Error('Dosya yok')
   const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
-  await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
-  await deleteAsset(s.owner, file.manifestAssetId)
-  for (const part of manifest.parts) await deleteAsset(s.owner, part.assetId)
-  db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename))
+  try {
+    await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+    await deleteAsset(s.owner, file.manifestAssetId)
+    for (const part of manifest.parts) await deleteAsset(s.owner, part.assetId)
+  } catch {}
+  db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename && (f.folder || '') === (folder || '')))
   await saveDb(s.owner, db)
   return listFiles()
 }
 
-async function renameFile(_, { oldName, newName }) {
+async function renameFile(_, { oldName, newName, folder }) {
   const s = requireSession()
   const db = await loadDb(s.owner)
-  requireUser(db, s.username, s.password)
-  const file = db.files.find(f => f.username === s.username && f.filename === oldName)
+  const file = db.files.find(f => f.username === s.username && f.filename === oldName && (f.folder || '') === (folder || ''))
   if (!file) throw new Error('Dosya yok')
-  if (db.files.some(f => f.username === s.username && f.filename === newName)) throw new Error('Bu isimde dosya zaten var')
+  if (db.files.some(f => f.username === s.username && f.filename === newName && (f.folder || '') === (folder || ''))) throw new Error('Bu isimde dosya zaten var')
   file.filename = newName
   await saveDb(s.owner, db)
   return listFiles()
@@ -467,9 +379,10 @@ async function renameFile(_, { oldName, newName }) {
 async function bulkDelete(_, filenames) {
   const s = requireSession()
   const db = await loadDb(s.owner)
-  requireUser(db, s.username, s.password)
-  for (const filename of filenames) {
-    const file = db.files.find(f => f.username === s.username && f.filename === filename)
+  for (const item of filenames) {
+    const fname = typeof item === 'string' ? item : item.name
+    const ffolder = typeof item === 'string' ? '' : (item.folder || '')
+    const file = db.files.find(f => f.username === s.username && f.filename === fname && (f.folder || '') === ffolder)
     if (!file) continue
     try {
       const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
@@ -478,8 +391,61 @@ async function bulkDelete(_, filenames) {
       await deleteAsset(s.owner, file.manifestAssetId)
       for (const part of manifest.parts) await deleteAsset(s.owner, part.assetId)
     } catch {}
-    db.files = db.files.filter(f => !(f.username === s.username && f.filename === filename))
+    db.files = db.files.filter(f => !(f.username === s.username && f.filename === fname && (f.folder || '') === ffolder))
   }
+  await saveDb(s.owner, db)
+  return listFiles()
+}
+
+async function moveFiles(_, { files, toFolder }) {
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  for (const item of files) {
+    const f = db.files.find(x => x.username === s.username && x.filename === item.name && (x.folder || '') === (item.folder || ''))
+    if (f) f.folder = toFolder || ''
+  }
+  await saveDb(s.owner, db)
+  return listFiles()
+}
+
+async function createFolder(_, folderName) {
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  if (!db.folders) db.folders = []
+  if (db.folders.some(f => f.username === s.username && f.name === folderName)) throw new Error('Klasor zaten var')
+  db.folders.push({ username: s.username, name: folderName, parent: '', createdAt: Date.now() })
+  await saveDb(s.owner, db)
+  return listFiles()
+}
+
+async function deleteFolder(_, folderName) {
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  if (!db.folders) db.folders = []
+  const prefix = folderName ? folderName + '/' : ''
+  db.files = db.files.filter(f => !(f.username === s.username && (f.folder || '').startsWith(prefix)))
+  db.folders = db.folders.filter(f => !(f.username === s.username && ((f.parent || '') + f.name + '/').startsWith(prefix) && f.name !== folderName))
+  db.folders = db.folders.filter(f => !(f.username === s.username && f.name === folderName && (f.parent || '') === ''))
+  await saveDb(s.owner, db)
+  return listFiles()
+}
+
+async function renameFolder(_, { oldName, newName }) {
+  const s = requireSession()
+  const db = await loadDb(s.owner)
+  if (!db.folders) db.folders = []
+  const folder = db.folders.find(f => f.username === s.username && f.name === oldName && (f.parent || '') === '')
+  if (!folder) throw new Error('Klasor yok')
+  if (db.folders.some(f => f.username === s.username && f.name === newName && (f.parent || '') === '')) throw new Error('Bu isimde klasor zaten var')
+  folder.name = newName
+  const oldPrefix = oldName
+  const newPrefix = newName
+  db.files.filter(f => f.username === s.username && (f.folder || '').startsWith(oldPrefix + '/')).forEach(f => {
+    f.folder = newPrefix + f.folder.slice(oldPrefix.length)
+  })
+  db.folders.filter(f => f.username === s.username && (f.parent || '').startsWith(oldPrefix + '/')).forEach(f => {
+    f.parent = newPrefix + f.parent.slice(oldPrefix.length)
+  })
   await saveDb(s.owner, db)
   return listFiles()
 }
@@ -517,30 +483,26 @@ async function backupUpload() {
 async function getUser(_, token) {
   try {
     const res = await fetch('https://api.github.com/user', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'Nimbus-GitCloud',
-      }
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'Nimbus-GitCloud' }
     })
     if (!res.ok) return null
     const data = await res.json()
     return data.login
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
 async function initSessionFromToken(token) {
   const username = await getUser(null, token)
   if (!username) throw new Error('GitHub kullanici alinamadi')
-  session = { owner: username, username, password: null }
+  session = { owner: username, username }
   return username
 }
 
-async function validateTokenHandler(_, token) {
-  return await validateToken(token)
+function sendProgress(done, total, name, started) {
+  const elapsed = Math.max((Date.now() - started) / 1000, 0.001)
+  const speed = done / elapsed
+  const eta = speed ? Math.max((total - done) / speed, 0) : 0
+  if (win && !win.isDestroyed()) win.webContents.send('progress', { done, total, name, speed, eta })
 }
 
 function createWindow() {
@@ -553,6 +515,7 @@ function createWindow() {
     frame: false,
     autoHideMenuBar: true,
     backgroundColor: '#050505',
+    icon: path.join(__dirname, '..', 'logo.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   })
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
@@ -587,56 +550,44 @@ app.whenReady().then(() => {
       if (token) {
         saveOAuthToken(token, 'github_user')
         initSessionFromToken(token).catch(() => {})
-        if (win) {
-          win.webContents.send('oauth-token', token)
-        }
+        if (win && !win.isDestroyed()) win.webContents.send('oauth-token', token)
       }
-      return new Response('<html><body><script>window.close()</script></body></html>', {
-        status: 200,
-        headers: { 'Content-Type': 'text/html' }
-      })
+      return new Response('<html><body><script>window.close()</script></body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } })
     }
     
     const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '')
     const filePath = path.join(RENDERER_DIR, safeName)
-    if (!fs.existsSync(filePath)) {
-      return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })
-    }
+    if (!fs.existsSync(filePath)) return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })
     const stream = fs.createReadStream(filePath)
-    return new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': getMime(filePath) }
-    })
+    return new Response(stream, { status: 200, headers: { 'Content-Type': getMime(filePath) } })
   })
   Menu.setApplicationMenu(null)
   
   safe('github-login', async () => {
-    const authUrl = 'https://nimbus-gitcloud.vercel.app/api/auth/github'
-    require('electron').shell.openExternal(authUrl)
+    shell.openExternal('https://nimbus-gitcloud.vercel.app/api/auth/github')
     return true
   })
   
   safe('get-user', getUser)
-  safe('validate-token', validateTokenHandler)
-  
-  safe('set-oauth-token', async (_, { token, username }) => {
-    saveOAuthToken(token, username)
+  safe('validate-token', async (_, token) => await validateToken(token))
+  safe('set-oauth-token', async (_, { token }) => {
+    saveOAuthToken(token, 'github_user')
     await initSessionFromToken(token)
     return true
   })
-  
-  safe('clear-oauth-token', async () => {
-    clearOAuthToken()
-    return true
-  })
+  safe('clear-oauth-token', async () => { clearOAuthToken(); return true })
   
   safe('list', listFiles)
   safe('upload', pickUpload)
-  safe('upload-paths', uploadPaths)
+  safe('upload-paths', async (_, data) => uploadPaths(null, data.paths, data.folder))
   safe('download', downloadNamed)
   safe('delete', deleteNamed)
   safe('rename', renameFile)
   safe('bulk-delete', bulkDelete)
+  safe('move-files', moveFiles)
+  safe('create-folder', createFolder)
+  safe('delete-folder', deleteFolder)
+  safe('rename-folder', renameFolder)
   safe('backup-download', backupDownload)
   safe('backup-upload', backupUpload)
   safe('clear-cache', clearCache)
@@ -648,9 +599,7 @@ app.whenReady().then(() => {
   safe('win-close', async () => { if (win) win.close() })
   
   loadOAuthToken()
-  if (oauthToken) {
-    initSessionFromToken(oauthToken).catch(() => {})
-  }
+  if (oauthToken) initSessionFromToken(oauthToken).catch(() => {})
   createWindow()
 })
 

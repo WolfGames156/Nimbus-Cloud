@@ -12,14 +12,22 @@
     "productName": "Nimbus Cloud",
     "files": [
       "src/**/*",
-      "package.json"
+      "package.json",
+      "logo.png"
     ],
     "win": {
       "target": [
         "portable"
       ],
       "artifactName": "Nimbus Cloud.exe",
+      "icon": "logo.png",
       "sign": false
+    },
+    "mac": {
+      "icon": "logo.png"
+    },
+    "linux": {
+      "icon": "logo.png"
     }
   },
   "devDependencies": {
