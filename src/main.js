@@ -218,9 +218,11 @@ async function uploadAsset(ownerName, rel, filePath, name, repo, progress = null
 async function downloadAsset(ownerName, id, filePath, repo) {
   try {
     const data = await gh('GET', `https://api.github.com/repos/${ownerName}/${repo}/releases/assets/${id}`, null, { Accept: 'application/octet-stream' })
+    if (!data) return false
     fs.writeFileSync(filePath, data)
+    return true
   } catch (e) {
-    if (String(e.message).includes('404')) throw new Error('Asset not found')
+    if (String(e.message).includes('404')) return false
     throw e
   }
 }
@@ -297,7 +299,18 @@ async function uploadPaths(_, filePaths, folder = '') {
   const s = requireSession()
   const db = await loadDb(s.owner)
   const REPO = require('./config').REPO
-  const rel = await release(s.owner, BLOB_TAG, REPO)
+  
+  // Find or create blob release with available slots
+  let blobTag = BLOB_TAG
+  let rel = null
+  for (let i = 0; i < 100; i++) {
+    const tag = i === 0 ? BLOB_TAG : BLOB_TAG.slice(0, -4) + String(i).padStart(4, '0')
+    try {
+      rel = await release(s.owner, tag, REPO)
+      if (!rel.assets || rel.assets.length < 950) { blobTag = tag; break }
+    } catch { rel = null; blobTag = tag; break }
+  }
+  if (!rel) rel = await release(s.owner, blobTag, REPO)
   for (const fp of filePaths.filter(fp => fs.existsSync(fp) && fs.statSync(fp).isFile())) {
     const stat = fs.statSync(fp)
     const filename = path.basename(fp)
@@ -378,16 +391,16 @@ async function downloadNamed(_, { filename, folder, preview = false }) {
   const s = requireSession()
   const db = await loadDb(s.owner)
   const file = db.files.find(f => f.username === s.username && f.filename === filename && (f.folder || '') === (folder || ''))
-  if (!file) throw new Error('Dosya yok')
+  if (!file) throw new Error('File not found')
   const targetDir = preview ? cacheDir() : (await dialog.showOpenDialog(win, { properties: ['openDirectory'] })).filePaths[0]
   if (!targetDir) return null
   fs.mkdirSync(targetDir, { recursive: true })
   const cached = preview ? path.join(targetDir, `${file.sha256}-${filename}`) : null
   if (cached && fs.existsSync(cached) && hashFile(cached) === file.sha256) return { path: cached, type: file.type, name: filename }
   const manifestPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-manifest.json`)
-  try {
-    await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
-  } catch (error) { throw error }
+  const ok = await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
+  if (!ok && preview) return null
+  if (!ok) throw new Error('File unavailable')
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
   const out = preview ? cached : path.join(targetDir, manifest.filename)
   const started = Date.now()
@@ -395,11 +408,13 @@ async function downloadNamed(_, { filename, folder, preview = false }) {
   fs.writeFileSync(out, '')
   for (const part of manifest.parts) {
     const partPath = path.join(os.tmpdir(), `nimbus-${Date.now()}-${part.index}.part`)
-    await downloadAsset(s.owner, part.assetId, partPath)
+    const partOk = await downloadAsset(s.owner, part.assetId, partPath)
+    if (!partOk) continue
     fs.appendFileSync(out, fs.readFileSync(partPath))
     done += part.size
     sendProgress(done, manifest.size, manifest.filename, started)
   }
+  if (preview && !done) return null
   return preview ? { path: out, type: file.type, name: filename } : out
 }
 
@@ -550,9 +565,8 @@ async function downloadFolderZip(_, folderName) {
     const fileDir = relPath ? path.join(baseDir, relPath) : baseDir
     fs.mkdirSync(fileDir, { recursive: true })
     const manifestPath = path.join(os.tmpdir(), `nimbus-man-${Date.now()}.json`)
-    try {
-      await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
-    } catch { continue }
+    const manOk = await downloadAsset(s.owner, file.manifestAssetId, manifestPath)
+    if (!manOk) continue
     if (fs.existsSync(manifestPath)) {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
       const outFile = path.join(fileDir, manifest.filename)
