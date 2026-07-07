@@ -479,13 +479,37 @@ input:focus, select:focus { border-color: #58a6ff; box-shadow: inset 0 0 0 1px #
 .action-item {
   cursor: pointer;
   border: 1px dashed var(--theme-line);
-  background-color: transparent;
+  background: transparent !important;
   transition: all 0.15s;
+  padding: 10px 16px !important;
+  min-height: 56px;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 12px;
+}
+.action-item .thumb {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+  margin-bottom: 0 !important;
+  background: var(--theme-panel-light);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.action-item .name {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--theme-muted);
+  margin-bottom: 0 !important;
 }
 .action-item:hover {
-  background-color: rgba(255,255,255,0.03);
+  background: rgba(255,255,255,0.04) !important;
   border-color: var(--theme-muted);
 }
+.action-item:hover .name { color: var(--theme-text); }
 .nav-up .thumb span { opacity: 0.6; }
 
 .drop-folder.drag-over, .nav-up.drag-over {

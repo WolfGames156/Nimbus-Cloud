@@ -462,15 +462,20 @@ $('winMinimize').onclick = () => window.nimbus.winMinimize()
 $('winMaximize').onclick = () => window.nimbus.winMaximize()
 $('winClose').onclick = () => window.nimbus.winClose()
 
-window.addEventListener('dragover', event => { event.preventDefault(); $('dropOverlay').classList.add('active') })
+window.addEventListener('dragover', event => {
+  const isInternal = event.dataTransfer.types && event.dataTransfer.types.includes('text/plain')
+  if (!isInternal) { event.preventDefault(); $('dropOverlay').classList.add('active') }
+})
 window.addEventListener('dragleave', event => {
   if (event.clientX <= 0 || event.clientY <= 0 || event.clientX >= innerWidth || event.clientY >= innerHeight) $('dropOverlay').classList.remove('active')
 })
 window.addEventListener('drop', event => {
   event.preventDefault()
   $('dropOverlay').classList.remove('active')
-  const paths = [...event.dataTransfer.files].map(file => file.path).filter(Boolean)
-  if (paths.length) uploadDropped(paths)
+  if (event.dataTransfer.files.length > 0) {
+    const paths = [...event.dataTransfer.files].map(file => file.path).filter(Boolean)
+    if (paths.length) uploadDropped(paths)
+  }
 })
 
 window.nimbus.onProgress(p => {
