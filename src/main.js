@@ -10,11 +10,57 @@ const { MIRROR_REPOS, DB_TAG, BLOB_TAG, CHUNK_SIZE } = require('./config')
 let win
 let session = null
 let oauthToken = null
+let memoryDb = null
+let syncTimer = null
+let syncDirty = false
 
 function getDataPath() {
   const dir = app.getPath('userData')
   fs.mkdirSync(dir, { recursive: true })
   return dir
+}
+
+function localDbPath() {
+  return path.join(getDataPath(), 'db-cache.json')
+}
+
+function loadLocalDb() {
+  try {
+    const file = localDbPath()
+    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {}
+  return null
+}
+
+function saveLocalDb(db) {
+  try { fs.writeFileSync(localDbPath(), JSON.stringify(db, null, 2)) } catch {}
+}
+
+function scheduleSync() {
+  syncDirty = true
+  if (syncTimer) clearTimeout(syncTimer)
+  syncTimer = setTimeout(doSync, 3000)
+}
+
+async function doSync() {
+  if (!syncDirty || !memoryDb || !session) return
+  syncDirty = false
+  try {
+    const tmp = path.join(os.tmpdir(), `nimbus-db-sync-${Date.now()}.json`)
+    fs.writeFileSync(tmp, JSON.stringify(memoryDb, null, 2))
+    const REPO = require('./config').REPO
+    for (const repo of repos()) {
+      try {
+        await ensureRepo(session.owner, repo)
+        const rel = await release(session.owner, DB_TAG, repo)
+        await uploadAsset(session.owner, rel, tmp, 'db.json', repo)
+      } catch (e) {
+        if (repo === REPO) throw e
+      }
+    }
+  } catch (e) {
+    console.error('Sync error:', e.message)
+  }
 }
 
 function tokenPath() {
@@ -170,8 +216,13 @@ async function uploadAsset(ownerName, rel, filePath, name, repo, progress = null
 }
 
 async function downloadAsset(ownerName, id, filePath, repo) {
-  const data = await gh('GET', `https://api.github.com/repos/${ownerName}/${repo}/releases/assets/${id}`, null, { Accept: 'application/octet-stream' })
-  fs.writeFileSync(filePath, data)
+  try {
+    const data = await gh('GET', `https://api.github.com/repos/${ownerName}/${repo}/releases/assets/${id}`, null, { Accept: 'application/octet-stream' })
+    fs.writeFileSync(filePath, data)
+  } catch (e) {
+    if (String(e.message).includes('404')) throw new Error('Asset not found')
+    throw e
+  }
 }
 
 async function writePart(source, target, start, size) {
@@ -192,6 +243,9 @@ function hashFile(filePath) {
 }
 
 async function loadDb(ownerName) {
+  if (memoryDb) return memoryDb
+  const local = loadLocalDb()
+  if (local && local.files) { memoryDb = local; return local }
   const REPO = require('./config').REPO
   let lastError = null
   for (const repo of repos()) {
@@ -201,33 +255,27 @@ async function loadDb(ownerName) {
       const asset = rel.assets.find(a => a.name === 'db.json')
       if (!asset) continue
       const tmp = path.join(os.tmpdir(), `nimbus-db-${Date.now()}.json`)
-      await downloadAsset(ownerName, asset.id, tmp, repo)
-      return JSON.parse(fs.readFileSync(tmp, 'utf8'))
-    } catch (error) {
-      lastError = error
-    }
+      try { await downloadAsset(ownerName, asset.id, tmp, repo) } catch { continue }
+      if (fs.existsSync(tmp)) {
+        const db = JSON.parse(fs.readFileSync(tmp, 'utf8'))
+        memoryDb = db; saveLocalDb(db); return db
+      }
+    } catch (error) { lastError = error }
   }
   if (lastError && !String(lastError.message).includes('404')) throw lastError
-  return { files: [], folders: [] }
+  memoryDb = { files: [], folders: [] }
+  saveLocalDb(memoryDb)
+  return memoryDb
 }
 
 async function saveDb(ownerName, db) {
-  const REPO = require('./config').REPO
-  const tmp = path.join(os.tmpdir(), `nimbus-db-${Date.now()}.json`)
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2))
-  for (const repo of repos()) {
-    try {
-      await ensureRepo(ownerName, repo)
-      const rel = await release(ownerName, DB_TAG, repo)
-      await uploadAsset(ownerName, rel, tmp, 'db.json', repo)
-    } catch (error) {
-      if (repo === REPO) throw error
-    }
-  }
+  memoryDb = db
+  saveLocalDb(db)
+  scheduleSync()
 }
 
 function requireSession() {
-  if (!session) throw new Error('Once GitHub ile giris yapin')
+  if (!session) throw new Error('Please login with GitHub first')
   return session
 }
 

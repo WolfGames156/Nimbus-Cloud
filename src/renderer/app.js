@@ -12,12 +12,15 @@ function saveToken(token) { try { localStorage.setItem('github_token', token) } 
 function clearToken() { try { localStorage.removeItem('github_token') } catch {} }
 
 const texts = {
-  TR: { files: 'Dosyalar', empty: 'Henüz dosya yok', preview: 'Önizle', download: 'İndir', del: 'Sil', confirm: 'Silinsin mi?', rename: 'Yeniden adlandır', newFolder: 'Yeni klasör', move: 'Taşı', moveHere: 'Buraya taşı' },
-  EN: { files: 'Files', empty: 'No files yet', preview: 'Preview', download: 'Download', del: 'Delete', confirm: 'Delete?', rename: 'Rename', newFolder: 'New folder', move: 'Move', moveHere: 'Move here' },
+  empty: 'No files yet',
+  preview: 'Preview',
+  download: 'Download',
+  del: 'Delete',
+  confirm: 'Delete this item?',
+  rename: 'Rename',
+  newFolder: 'New folder',
 }
-let currentLang = 'TR'
-function lang() { return currentLang }
-function t(k) { const v = texts[lang()][k]; return v || k }
+function t(k) { return texts[k] || k }
 function fmt(n) {
   if (n >= 1073741824) return `${(n / 1073741824).toFixed(1)} GB`
   if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`
@@ -39,7 +42,7 @@ async function call(fn, target) {
     return res
   } catch (e) {
     console.error('Call error:', e)
-    if (target) target.textContent = 'Hata oluştu'
+    if (target) target.textContent = 'Error occured'
     return null
   }
 }
@@ -63,7 +66,7 @@ function render(data) {
   const folders = (data.folders || []).filter(f => (f.folder || '') === currentFolder)
   const files = data.files.filter(f => (f.folder || '') === currentFolder && f.name.toLowerCase().includes(query))
   const total = data.files.reduce((s, f) => s + f.size, 0)
-  $('fileStatus').textContent = `${data.files.length} dosya, ${folders.length} klasör · ${fmt(total)} alan`
+  $('fileStatus').textContent = `${data.files.length} files, ${folders.length} folders · ${fmt(total)} used`
 
   const hasSelection = selectedFiles.size > 0
   $('bulkToolbar').classList.toggle('hidden', !hasSelection)
@@ -92,8 +95,8 @@ function render(data) {
       <div class="thumb"><span style="font-size:28px">📁</span></div>
       <div class="name" title="${folder.name}">${folder.name}</div>
       <div class="actions">
-        <button onclick="event.stopPropagation();renameFolderUI('${enc}')" title="Yeniden adlandır"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        <button class="danger" onclick="event.stopPropagation();removeFolder('${enc}')" title="Sil"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        <button onclick="event.stopPropagation();renameFolderUI('${enc}')" title="Rename"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="danger" onclick="event.stopPropagation();removeFolder('${enc}')" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </div>
     </article>`
   }
@@ -174,7 +177,7 @@ function bulkMove() {
   const sel = $('moveFolderSelect')
   const data = window.currentData || { folders: [] }
   const allFolders = data.folders || []
-  sel.innerHTML = '<option value="">(Kök dizin)</option>'
+  sel.innerHTML = '<option value="">(Root)</option>'
   for (const f of allFolders) {
     const opt = document.createElement('option')
     opt.value = f.name
@@ -222,7 +225,7 @@ function showPage(page) {
   document.querySelectorAll('.page').forEach(el => el.classList.remove('active-page'))
   document.querySelectorAll('.nav-btn').forEach(el => el.classList.toggle('active', el.dataset.page === page))
   $(`page-${page}`).classList.add('active-page')
-  $('pageTitle').textContent = page === 'files' ? 'Dosyalar' : page === 'backups' ? 'Yedekler' : 'Ayarlar'
+  $('pageTitle').textContent = page === 'files' ? 'Files' : page === 'backups' ? 'Backups' : 'Settings'
 }
 
 function toggleSidebar() {
@@ -235,7 +238,7 @@ async function syncFiles() {
   const btn = $('refresh')
   if (btn.classList.contains('syncing')) return
   btn.classList.add('syncing')
-  $('fileStatus').textContent = 'Senkronize ediliyor...'
+  $('fileStatus').textContent = 'Syncing...'
   const data = await call(() => window.nimbus.list())
   if (data) { render(data); saveFileCache(data) }
   btn.classList.remove('syncing')
@@ -285,7 +288,7 @@ async function doNewFolder() {
 
 async function removeFolder(encodedName) {
   const name = decodeURIComponent(encodedName)
-  if (!confirm(`"${name}" klasörü ve içeriği silinecek. Emin misin?`)) return
+  if (!confirm(`"${name}" folder and all contents will be deleted. Are you sure?`)) return
   const data = await call(() => window.nimbus.deleteFolder(name))
   if (data) { render(data); saveFileCache(data) }
 }
@@ -308,7 +311,7 @@ async function doRenameFolder() {
 }
 
 async function upload() {
-  showToast('Dosya yükleniyor')
+  showToast('Uploading...')
   const data = await call(() => window.nimbus.upload(currentFolder))
   if (data) { render(data); saveFileCache(data); showPage('files') }
 }
@@ -318,7 +321,7 @@ async function preview(name, folder) {
   if (!result) return
   $('previewTitle').textContent = result.name
   const src = `file:///${result.path.replaceAll('\\\\', '/').replaceAll('\\', '/')}`
-  $('previewBody').innerHTML = result.type.startsWith('video/') ? `<video src="${src}" controls autoplay></video>` : result.type.startsWith('image/') ? `<img src="${src}">` : `<p class="sub">Önizleme yok</p>`
+  $('previewBody').innerHTML = result.type.startsWith('video/') ? `<video src="${src}" controls autoplay></video>` : result.type.startsWith('image/') ? `<img src="${src}">` : `<p class="sub">No preview</p>`
   $('previewModal').classList.remove('hidden')
 }
 
@@ -371,7 +374,7 @@ async function bulkDownload() {
 }
 
 async function bulkDelete() {
-  if (!confirm(`${selectedFiles.size} öğe silinecek. Emin misin?`)) return
+  if (!confirm(`${selectedFiles.size} items will be deleted. Are you sure?`)) return
   const items = [...selectedFiles].map(k => {
     const [name, folder] = k.split('|')
     return { name, folder: folder || '' }
@@ -438,15 +441,6 @@ $('refresh').onclick = syncFiles
 $('backupDown').onclick = () => call(() => window.nimbus.backupDownload())
 $('backupUp').onclick = async () => { const data = await call(() => window.nimbus.backupUpload()); if (data) { render(data); saveFileCache(data) } }
 $('logout').onclick = () => { clearToken(); location.reload() }
-$('settingsLang').onchange = async () => {
-  currentLang = $('settingsLang').value
-  await call(() => window.nimbus.setSettings({ lang: currentLang }), null)
-  document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
-    if (btn.dataset.page === 'files') btn.querySelector('span').textContent = 'Dosyalar'
-    if (btn.dataset.page === 'backups') btn.querySelector('span').textContent = 'Yedekler'
-    if (btn.dataset.page === 'settings') btn.querySelector('span').textContent = 'Ayarlar'
-  })
-}
 $('settingsTheme').onchange = async () => { document.body.dataset.theme = $('settingsTheme').value; await call(() => window.nimbus.setSettings({ theme: $('settingsTheme').value }), null) }
 $('clearCache').onclick = () => { localStorage.removeItem('fileCache'); localStorage.removeItem('thumbCache'); thumbCache = {}; call(() => window.nimbus.clearCache()) }
 $('openCache').onclick = () => call(() => window.nimbus.openCache())
@@ -485,7 +479,7 @@ window.addEventListener('drop', event => {
   if (event.dataTransfer.files.length > 0) {
     const paths = [...event.dataTransfer.files].map(file => file.path).filter(Boolean)
     if (paths.length) {
-      showToast('İşleniyor...')
+      showToast('Processing...')
       call(() => window.nimbus.zipAndUpload({ paths, folder: currentFolder })).then(data => {
         if (data) { render(data); saveFileCache(data); showPage('files') }
       })
@@ -495,10 +489,10 @@ window.addEventListener('drop', event => {
 
 window.nimbus.onProgress(p => {
   const pct = p.total ? (p.done / p.total) * 100 : 0
-  showToast(p.name || 'İşlem')
+  showToast(p.name || 'Processing')
   $('toastThumb').textContent = ext(p.name || 'FILE')
   $('bar').style.width = `${Math.min(pct, 100)}%`
-  $('progressText').textContent = pct >= 100 ? 'Tamamlandı' : `%${pct.toFixed(1)} · ${fmt(p.speed)}/s · ETA ${eta(p.eta)}`
+  $('progressText').textContent = pct >= 100 ? 'Done' : `%${pct.toFixed(1)} · ${fmt(p.speed)}/s · ETA ${eta(p.eta)}`
   if (pct >= 100) {
     if (toastTimer) clearTimeout(toastTimer)
     toastTimer = setTimeout(() => $('transferToast').classList.add('hidden'), 2000)
@@ -520,13 +514,10 @@ async function init() {
   try {
     const rawSettings = await call(() => window.nimbus.getSettings(), null)
     const settings = (rawSettings && typeof rawSettings === 'object' && !Array.isArray(rawSettings)) ? rawSettings : {}
-    $('settingsLang').value = 'TR'
-    document.body.dataset.theme = settings.theme || 'Siyah'
-    $('settingsTheme').value = settings.theme || 'Siyah'
+    document.body.dataset.theme = settings.theme || 'Dark'
+    $('settingsTheme').value = settings.theme || 'Dark'
     showPage('files')
     if (settings.sidebarClosed) { $('app').classList.add('sidebar-closed'); $('sidebarToggle').classList.add('active') }
-    currentLang = settings.lang || 'TR'
-    $('settingsLang').value = currentLang
     const token = loadToken()
     if (token) {
       $('loading').classList.remove('hidden')
