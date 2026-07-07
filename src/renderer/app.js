@@ -69,14 +69,25 @@ function render(data) {
   $('selectedCount').textContent = `${selectedFiles.size} seçili`
 
   let html = ''
+
+  // --- ÜST KISIM: Geri + Klasörler ---
   if (currentFolder) {
-    html += `<article class="file folder-item" onclick="navigateUp()"><div class="thumb"><span style="font-size:20px">⬆</span></div><div class="name">.. (Geri)</div></article>`
+    const parentFolder = currentFolder.split('/').slice(0, -1).join('/')
+    html += `<article class="file action-item nav-up" onclick="navigateUp()"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="event.preventDefault();this.classList.remove('drag-over');moveFileToUp(event)">
+      <div class="thumb"><span style="font-size:18px">⬆</span></div>
+      <div class="name">.. (Geri)</div>
+    </article>`
   }
-  html += `<article class="file folder-item" onclick="promptNewFolder()"><div class="thumb"><span style="font-size:24px">+</span></div><div class="name">${t('newFolder')}</div></article>`
 
   for (const folder of folders) {
     const enc = encodeURIComponent(folder.name)
-    html += `<article class="file folder-item" ondblclick="navigateFolder('${enc}')">
+    html += `<article class="file folder-item drop-folder" ondblclick="navigateFolder('${enc}')"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="event.preventDefault();this.classList.remove('drag-over');moveFileTo('${enc}',event)">
       <div class="thumb"><span style="font-size:28px">📁</span></div>
       <div class="name" title="${folder.name}">${folder.name}</div>
       <div class="actions">
@@ -86,12 +97,16 @@ function render(data) {
     </article>`
   }
 
+  // --- ALT KISIM: Dosyalar + Yeni Klasör ---
   for (const f of files) {
     const key = f.name + '|' + (f.folder || '')
     const isSelected = selectedFiles.has(key)
     const encName = encodeURIComponent(f.name)
     const encFolder = encodeURIComponent(f.folder || '')
-    html += `<article class="file${isSelected ? ' selected' : ''}" data-name="${f.name}">
+    html += `<article class="file${isSelected ? ' selected' : ''}" draggable="true"
+      data-file="${encName}" data-folder="${encFolder}"
+      ondragstart="dragStart(event,'${encName}','${encFolder}')"
+      ondragend="this.classList.remove('dragging')">
       <input type="checkbox" class="file-select" ${isSelected ? 'checked' : ''} onchange="toggleSelect('${encName}','${encFolder}', this.checked)">
       ${fileIcon(f)}
       <div class="name" title="${f.name}">${f.name}</div>
@@ -99,26 +114,90 @@ function render(data) {
       <div class="actions">
         ${canPreview(f) ? `<button onclick="preview('${encName}','${encFolder}')" title="${t('preview')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
         <button onclick="downloadFile('${encName}','${encFolder}')" title="${t('download')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
-        <button onclick="moveFileUI('${encName}','${encFolder}')" title="Taşı"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17l-5 5 5-5zM12 5l5 5-5-5z"/><path d="M5 22h16v-8M22 5H6v16"/></svg></button>
         <button onclick="renameFile('${encName}','${encFolder}')" title="${t('rename')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="danger" onclick="removeFile('${encName}','${encFolder}')" title="${t('del')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </div>
     </article>`
   }
 
+  html += `<article class="file action-item new-folder" onclick="promptNewFolder()">
+    <div class="thumb"><span style="font-size:20px">+</span></div>
+    <div class="name">${t('newFolder')}</div>
+  </article>`
+
   if (!folders.length && !files.length && !currentFolder) {
-    html += `<p class="sub" style="grid-column:1/-1;text-align:center">${t('empty')}</p>`
+    html += `<p class="sub" style="grid-column:1/-1;text-align:center;padding:40px">${t('empty')}</p>`
   }
 
   $('files').innerHTML = html
   hydrateThumbs()
 }
 
-function toggleSelect(encodedName, encodedFolder, checked) {
-  const key = decodeURIComponent(encodedName) + '|' + decodeURIComponent(encodedFolder)
-  if (checked) selectedFiles.add(key)
-  else selectedFiles.delete(key)
+function dragStart(event, encName, encFolder) {
+  event.dataTransfer.setData('text/plain', JSON.stringify({ name: decodeURIComponent(encName), folder: decodeURIComponent(encFolder) }))
+  event.dataTransfer.effectAllowed = 'move'
+  event.target.classList.add('dragging')
+}
+
+function optimisticMove(fileName, fileFolder, targetFolder) {
+  const data = window.currentData
+  if (!data || !data.files) return
+  for (const f of data.files) {
+    if (f.name === fileName && (f.folder || '') === (fileFolder || '')) {
+      f.folder = targetFolder
+    }
+  }
+  render(data)
+}
+
+async function moveFileTo(encFolder, event) {
+  try {
+    const transferData = JSON.parse(event.dataTransfer.getData('text/plain'))
+    const targetFolder = decodeURIComponent(encFolder)
+    const fullTarget = currentFolder ? currentFolder + '/' + targetFolder : targetFolder
+    optimisticMove(transferData.name, transferData.folder, fullTarget)
+    await call(() => window.nimbus.moveFiles({ files: [transferData], toFolder: fullTarget }), null)
+  } catch (e) { console.error('Move error:', e) }
+}
+
+async function moveFileToUp(event) {
+  try {
+    const transferData = JSON.parse(event.dataTransfer.getData('text/plain'))
+    const parentFolder = currentFolder.split('/').slice(0, -1).join('/')
+    optimisticMove(transferData.name, transferData.folder, parentFolder)
+    await call(() => window.nimbus.moveFiles({ files: [transferData], toFolder: parentFolder }), null)
+  } catch (e) { console.error('Move error:', e) }
+}
+
+function bulkMove() {
+  const sel = $('moveFolderSelect')
+  const data = window.currentData || { folders: [] }
+  const allFolders = data.folders || []
+  sel.innerHTML = '<option value="">(Kök dizin)</option>'
+  for (const f of allFolders) {
+    const opt = document.createElement('option')
+    opt.value = f.name
+    opt.textContent = f.name
+    sel.appendChild(opt)
+  }
+  sel.dataset.bulk = '1'
+  $('moveFolderModal').classList.remove('hidden')
+}
+
+async function doBulkMove() {
+  const target = $('moveFolderSelect').value
+  $('moveFolderModal').classList.add('hidden')
+  const fullTarget = currentFolder ? currentFolder + '/' + target : target
+  const items = [...selectedFiles].map(k => {
+    const [name, folder] = k.split('|')
+    for (const f of (window.currentData?.files || [])) {
+      if (f.name === name && (f.folder || '') === (folder || '')) f.folder = fullTarget
+    }
+    return { name, folder: folder || '' }
+  })
+  selectedFiles.clear()
   render(window.currentData || { files: [], folders: [] })
+  await call(() => window.nimbus.moveFiles({ files: items, toFolder: fullTarget }), null)
 }
 
 async function hydrateThumbs() {
@@ -162,6 +241,8 @@ async function syncFiles() {
 }
 
 async function showApp(username) {
+  if (pasteTimer) clearTimeout(pasteTimer)
+  hideLogin()
   $('who').textContent = username
   $('auth').classList.add('hidden')
   $('app').classList.remove('hidden')
@@ -257,64 +338,6 @@ async function removeFile(name, folder) {
   }
 }
 
-let pendingMoveName = ''
-let pendingMoveFolder = ''
-
-function moveFileUI(encodedName, encodedFolder) {
-  pendingMoveName = decodeURIComponent(encodedName)
-  pendingMoveFolder = decodeURIComponent(encodedFolder || '')
-  const sel = $('moveFolderSelect')
-  const data = window.currentData || { folders: [] }
-  const allFolders = data.folders || []
-  sel.innerHTML = '<option value="">(Kök dizin)</option>'
-  for (const f of allFolders) {
-    const path = (f.folder ? f.folder + '/' : '') + f.name
-    if (path !== pendingMoveName) {
-      const opt = document.createElement('option')
-      opt.value = path
-      opt.textContent = path
-      sel.appendChild(opt)
-    }
-  }
-  $('moveFolderModal').classList.remove('hidden')
-}
-
-async function doMoveFile() {
-  const target = $('moveFolderSelect').value
-  $('moveFolderModal').classList.add('hidden')
-  const data = await call(() => window.nimbus.moveFiles({ files: [{ name: pendingMoveName, folder: pendingMoveFolder }], toFolder: target }))
-  pendingMoveName = ''
-  pendingMoveFolder = ''
-  if (data) { render(data); saveFileCache(data) }
-}
-
-async function bulkMove() {
-  const sel = $('moveFolderSelect')
-  const data = window.currentData || { folders: [] }
-  const allFolders = data.folders || []
-  sel.innerHTML = '<option value="">(Kök dizin)</option>'
-  for (const f of allFolders) {
-    const opt = document.createElement('option')
-    opt.value = (f.folder ? f.folder + '/' : '') + f.name
-    opt.textContent = opt.value
-    sel.appendChild(opt)
-  }
-  $('moveFolderSelect').dataset.bulk = '1'
-  $('moveFolderModal').classList.remove('hidden')
-}
-
-async function doBulkMove() {
-  const target = $('moveFolderSelect').value
-  $('moveFolderModal').classList.add('hidden')
-  const items = [...selectedFiles].map(k => {
-    const [name, folder] = k.split('|')
-    return { name, folder: folder || '' }
-  })
-  selectedFiles.clear()
-  const data = await call(() => window.nimbus.moveFiles({ files: items, toFolder: target }))
-  if (data) { render(data); saveFileCache(data) }
-}
-
 let pendingRenameName = ''
 let pendingRenameFolder = ''
 
@@ -363,12 +386,34 @@ async function bulkDelete() {
   if (data) { render(data); saveFileCache(data) }
 }
 
-let moveModalHandler = null
+$('moveFolderConfirm').onclick = doBulkMove
+$('moveFolderCancel').onclick = () => $('moveFolderModal').classList.add('hidden')
+document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
+  btn.onclick = () => { currentFolder = ''; selectedFiles.clear(); showPage(btn.dataset.page); if (btn.dataset.page === 'files') syncFiles() }
+})
+function hideToastLater() { setTimeout(() => $('transferToast').classList.add('hidden'), 1800) }
 
 function showToast(title) { $('toastTitle').textContent = title; $('transferToast').classList.remove('hidden') }
 function hideToastLater() { setTimeout(() => $('transferToast').classList.add('hidden'), 1800) }
 
-$('githubLoginBtn').onclick = () => window.nimbus.githubLogin()
+let pasteTimer = null
+
+function showLogin() {
+  $('loading').classList.add('hidden')
+  $('auth').classList.remove('hidden')
+}
+
+function hideLogin() {
+  $('loading').classList.add('hidden')
+  $('auth').classList.add('hidden')
+}
+
+$('githubLoginBtn').onclick = () => {
+  $('manualPaste').classList.add('hidden')
+  window.nimbus.githubLogin()
+  if (pasteTimer) clearTimeout(pasteTimer)
+  pasteTimer = setTimeout(() => $('manualPaste').classList.remove('hidden'), 30000)
+}
 $('tokenSubmitBtn').onclick = handleTokenPaste
 $('tokenInput').onkeydown = e => { if (e.key === 'Enter') handleTokenPaste() }
 
@@ -407,12 +452,8 @@ $('newFolderName').onkeydown = e => { if (e.key === 'Enter') doNewFolder(); if (
 $('renameFolderConfirm').onclick = doRenameFolder
 $('renameFolderCancel').onclick = () => $('renameFolderModal').classList.add('hidden')
 $('renameFolderNew').onkeydown = e => { if (e.key === 'Enter') doRenameFolder(); if (e.key === 'Escape') $('renameFolderModal').classList.add('hidden') }
-$('moveFolderConfirm').onclick = () => {
-  const isBulk = $('moveFolderSelect').dataset.bulk === '1'
-  if (isBulk) { doBulkMove(); $('moveFolderSelect').dataset.bulk = '' }
-  else doMoveFile()
-}
-$('moveFolderCancel').onclick = () => { $('moveFolderModal').classList.add('hidden'); pendingMoveName = '' }
+$('moveFolderConfirm').onclick = doBulkMove
+$('moveFolderCancel').onclick = () => $('moveFolderModal').classList.add('hidden')
 document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
   btn.onclick = () => { currentFolder = ''; selectedFiles.clear(); showPage(btn.dataset.page); if (btn.dataset.page === 'files') syncFiles() }
 })
@@ -442,6 +483,7 @@ window.nimbus.onProgress(p => {
 })
 
 window.nimbus.onOAuthToken(async (token) => {
+  if (pasteTimer) clearTimeout(pasteTimer)
   saveToken(token)
   const username = await call(() => window.nimbus.getUser(token), null)
   if (username) {
@@ -462,12 +504,22 @@ async function init() {
     if (settings.sidebarClosed) { $('app').classList.add('sidebar-closed'); $('sidebarToggle').classList.add('active') }
     const token = loadToken()
     if (token) {
+      $('loading').classList.remove('hidden')
+      $('auth').classList.add('hidden')
       const isValid = await call(() => window.nimbus.validateToken(token), null)
       if (isValid) {
         const username = await call(() => window.nimbus.getUser(token), null)
-        if (username) { showApp(username) } else { clearToken() }
-      } else { clearToken() }
+        if (username) { showApp(username) } else { clearToken(); showLogin() }
+      } else if (isValid === false) {
+        clearToken()
+        showLogin()
+      } else {
+        const username = await call(() => window.nimbus.getUser(token), null)
+        if (username) { showApp(username) } else { showLogin() }
+      }
+    } else {
+      showLogin()
     }
-  } catch (e) { console.error('Init error:', e); showPage('files') }
+  } catch (e) { console.error('Init error:', e); showLogin() }
 }
 init()

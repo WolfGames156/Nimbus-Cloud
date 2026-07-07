@@ -23,7 +23,15 @@
   </div>
   <div class="bg"></div>
   
-  <main id="auth" class="auth-shell">
+  <main id="loading" class="auth-shell">
+    <section class="auth-card glass" style="padding:60px 32px">
+      <div class="spinner" style="margin:0 auto 20px"></div>
+      <div class="logo" style="margin-bottom:0;">Nimbus<span>Cloud</span></div>
+      <p class="sub">Oturum açılıyor...</p>
+    </section>
+  </main>
+  
+  <main id="auth" class="auth-shell hidden">
     <section class="auth-card glass">
       <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:16px;">
         <img src="nimbus://logo.png" class="mainlogo" alt="Nimbus Cloud Logo"/>
@@ -34,7 +42,7 @@
         <svg width="26" height="26" viewBox="0 0 32 32" fill="none" style="vertical-align:middle;margin-right:10px;"><path fill="#24292f" d="M16 .396c-8.837 0-16 7.16-16 16.004 0 7.076 4.586 13.067 10.94 15.195.8.148 1.092-.346 1.092-.77 0-.383-.014-1.398-.022-2.743-4.451.968-5.39-2.146-5.39-2.146-.727-1.846-1.776-2.338-1.776-2.338-1.45-.99.11-.97.11-.97 1.603.113 2.448 1.649 2.448 1.649 1.426 2.447 3.742 1.74 4.655 1.33.144-1.033.558-1.74 1.014-2.14-3.553-.404-7.288-1.776-7.288-7.909 0-1.747.624-3.177 1.647-4.297-.165-.404-.714-2.035.157-4.247 0 0 1.343-.43 4.4 1.64A15.29 15.29 0 0 1 16 7.451c1.36.006 2.73.184 4.017.539 3.054-2.07 4.395-1.64 4.395-1.64.874 2.212.325 3.843.16 4.247 1.026 1.12 1.645 2.55 1.645 4.297 0 6.145-3.739 7.5-7.303 7.898.573.495 1.085 1.472 1.085 2.97 0 2.144-.019 3.873-.019 4.398 0 .427.288.927 1.1.77C27.419 29.465 32 23.473 32 16.399c0-8.844-7.162-16.004-16-16.004z"/></svg>
         Login with GitHub
       </button>
-      <div style="margin-top:20px;border-top:1px solid var(--theme-line);padding-top:20px">
+      <div id="manualPaste" class="hidden" style="margin-top:20px;border-top:1px solid var(--theme-line);padding-top:20px">
         <p class="sub" style="margin-bottom:8px">Alternatif: Token yapıştır</p>
         <div style="display:flex;gap:8px">
           <input id="tokenInput" type="text" placeholder="gho_... token" style="flex:1"/>

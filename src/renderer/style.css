@@ -476,6 +476,34 @@ input:focus, select:focus { border-color: #58a6ff; box-shadow: inset 0 0 0 1px #
 .folder-item:hover { background-color: rgba(88,166,255,0.12); }
 .folder-item .thumb { font-size: 24px; }
 
+.action-item {
+  cursor: pointer;
+  border: 1px dashed var(--theme-line);
+  background-color: transparent;
+  transition: all 0.15s;
+}
+.action-item:hover {
+  background-color: rgba(255,255,255,0.03);
+  border-color: var(--theme-muted);
+}
+.nav-up .thumb span { opacity: 0.6; }
+
+.drop-folder.drag-over, .nav-up.drag-over {
+  border-color: #58a6ff !important;
+  box-shadow: 0 0 0 2px rgba(88,166,255,0.3) !important;
+  background-color: rgba(88,166,255,0.15) !important;
+}
+.file.dragging { opacity: 0.4; }
+
+.spinner {
+  width: 36px; height: 36px;
+  border: 3px solid var(--theme-line);
+  border-top-color: var(--theme-primary-btn-bg);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .drop-overlay {
   position: fixed; inset: 0; z-index: 9998;
   display: grid; place-items: center;

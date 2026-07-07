@@ -59,7 +59,8 @@ async function validateToken(token) {
         'User-Agent': 'Nimbus-GitCloud',
       }
     })
-    return res.ok
+    if (res.status === 401) return false
+    return true
   } catch {
     return false
   }
