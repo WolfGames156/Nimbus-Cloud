@@ -93,27 +93,35 @@ body {
 .hidden { display: none !important; }
 
 .bg {
-  position: fixed; inset: 0; background-color: var(--theme-bg); overflow: hidden;
+  position: fixed; inset: 0; overflow: hidden; z-index: 0;
+  background: linear-gradient(135deg, var(--theme-bg) 0%, #0a1628 50%, var(--theme-bg) 100%);
+  background-size: 400% 400%;
+  animation: bgDrift 12s ease infinite;
+}
+@keyframes bgDrift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.bg::before, .bg::after {
+  content: ""; position: absolute; border-radius: 50%; pointer-events: none; opacity: 0.5;
+  animation: floatA 20s ease-in-out infinite;
 }
 .bg::before {
-  content: ""; position: absolute; width: 600px; height: 600px;
-  background: radial-gradient(circle, rgba(88,166,255,0.08) 0%, transparent 70%);
-  top: -200px; right: -200px; animation: floatA 20s ease-in-out infinite;
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(88,166,255,0.06) 0%, transparent 70%);
+  top: -150px; right: -150px;
 }
 .bg::after {
-  content: ""; position: absolute; width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(88,166,255,0.05) 0%, transparent 70%);
-  bottom: -150px; left: -150px; animation: floatB 25s ease-in-out infinite;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(88,166,255,0.04) 0%, transparent 70%);
+  bottom: -100px; left: -100px;
+  animation-delay: -8s;
 }
 @keyframes floatA {
   0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(80px, 60px) scale(1.1); }
-  66% { transform: translate(-40px, 30px) scale(0.95); }
-}
-@keyframes floatB {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(-60px, -40px) scale(1.05); }
-  66% { transform: translate(50px, -20px) scale(1.1); }
+  33% { transform: translate(80px, 60px) scale(1.15); }
+  66% { transform: translate(-40px, 30px) scale(0.9); }
 }
 
 .glass {
@@ -274,32 +282,6 @@ input:focus, select:focus { border-color: #58a6ff; box-shadow: inset 0 0 0 1px #
   padding: 24px;
   overflow-y: auto;
   position: relative;
-}
-
-.content::before {
-  content: "";
-  position: fixed;
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, rgba(88,166,255,0.06) 0%, transparent 70%);
-  top: -100px;
-  right: -100px;
-  pointer-events: none;
-  animation: floatA 20s ease-in-out infinite;
-  z-index: 0;
-}
-
-.content::after {
-  content: "";
-  position: fixed;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(88,166,255,0.04) 0%, transparent 70%);
-  bottom: -100px;
-  left: 200px;
-  pointer-events: none;
-  animation: floatB 25s ease-in-out infinite;
-  z-index: 0;
 }
 
 .content > * {
@@ -478,26 +460,28 @@ input:focus, select:focus { border-color: #58a6ff; box-shadow: inset 0 0 0 1px #
 
 .action-item {
   cursor: pointer;
-  border: 1px dashed var(--theme-line);
-  background: transparent !important;
-  transition: all 0.15s;
-  padding: 10px 16px !important;
-  min-height: 56px;
   display: flex !important;
   flex-direction: row !important;
   align-items: center !important;
-  gap: 12px;
+  gap: 10px;
+  padding: 8px 12px !important;
+  border: none !important;
+  background: transparent !important;
+  min-height: 40px !important;
+  border-radius: 6px;
+  transition: background 0.15s;
 }
 .action-item .thumb {
-  width: 32px !important;
-  height: 32px !important;
-  min-width: 32px !important;
-  min-height: 32px !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
   margin-bottom: 0 !important;
   background: var(--theme-panel-light);
-  border-radius: 50%;
+  border-radius: 6px;
   display: grid;
   place-items: center;
+  font-size: 14px;
 }
 .action-item .name {
   font-size: 13px;
@@ -505,12 +489,9 @@ input:focus, select:focus { border-color: #58a6ff; box-shadow: inset 0 0 0 1px #
   color: var(--theme-muted);
   margin-bottom: 0 !important;
 }
-.action-item:hover {
-  background: rgba(255,255,255,0.04) !important;
-  border-color: var(--theme-muted);
-}
+.action-item:hover { background: rgba(255,255,255,0.05) !important; }
 .action-item:hover .name { color: var(--theme-text); }
-.nav-up .thumb span { opacity: 0.6; }
+.nav-up .thumb span { opacity: 0.5; }
 
 .drop-folder.drag-over, .nav-up.drag-over {
   border-color: #58a6ff !important;

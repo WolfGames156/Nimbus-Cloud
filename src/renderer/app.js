@@ -15,8 +15,9 @@ const texts = {
   TR: { files: 'Dosyalar', empty: 'Henüz dosya yok', preview: 'Önizle', download: 'İndir', del: 'Sil', confirm: 'Silinsin mi?', rename: 'Yeniden adlandır', newFolder: 'Yeni klasör', move: 'Taşı', moveHere: 'Buraya taşı' },
   EN: { files: 'Files', empty: 'No files yet', preview: 'Preview', download: 'Download', del: 'Delete', confirm: 'Delete?', rename: 'Rename', newFolder: 'New folder', move: 'Move', moveHere: 'Move here' },
 }
-function lang() { return 'TR' }
-function t(k) { return texts[lang()][k] }
+let currentLang = 'TR'
+function lang() { return currentLang }
+function t(k) { const v = texts[lang()][k]; return v || k }
 function fmt(n) {
   if (n >= 1073741824) return `${(n / 1073741824).toFixed(1)} GB`
   if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`
@@ -436,7 +437,15 @@ $('refresh').onclick = syncFiles
 $('backupDown').onclick = () => call(() => window.nimbus.backupDownload())
 $('backupUp').onclick = async () => { const data = await call(() => window.nimbus.backupUpload()); if (data) { render(data); saveFileCache(data) } }
 $('logout').onclick = () => { clearToken(); location.reload() }
-$('settingsLang').onchange = async () => { $('settingsLang').value = 'TR'; await call(() => window.nimbus.setSettings({ lang: 'TR' }), null) }
+$('settingsLang').onchange = async () => {
+  currentLang = $('settingsLang').value
+  await call(() => window.nimbus.setSettings({ lang: currentLang }), null)
+  document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
+    if (btn.dataset.page === 'files') btn.querySelector('span').textContent = 'Dosyalar'
+    if (btn.dataset.page === 'backups') btn.querySelector('span').textContent = 'Yedekler'
+    if (btn.dataset.page === 'settings') btn.querySelector('span').textContent = 'Ayarlar'
+  })
+}
 $('settingsTheme').onchange = async () => { document.body.dataset.theme = $('settingsTheme').value; await call(() => window.nimbus.setSettings({ theme: $('settingsTheme').value }), null) }
 $('clearCache').onclick = () => { localStorage.removeItem('fileCache'); localStorage.removeItem('thumbCache'); thumbCache = {}; call(() => window.nimbus.clearCache()) }
 $('openCache').onclick = () => call(() => window.nimbus.openCache())
@@ -507,6 +516,8 @@ async function init() {
     $('settingsTheme').value = settings.theme || 'Siyah'
     showPage('files')
     if (settings.sidebarClosed) { $('app').classList.add('sidebar-closed'); $('sidebarToggle').classList.add('active') }
+    currentLang = settings.lang || 'TR'
+    $('settingsLang').value = currentLang
     const token = loadToken()
     if (token) {
       $('loading').classList.remove('hidden')

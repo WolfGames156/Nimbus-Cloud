@@ -125,7 +125,12 @@ async function release(ownerName, tag, repo) {
 }
 
 async function deleteAsset(ownerName, id, repo) {
-  await gh('DELETE', `https://api.github.com/repos/${ownerName}/${repo}/releases/assets/${id}`)
+  try {
+    await gh('DELETE', `https://api.github.com/repos/${ownerName}/${repo}/releases/assets/${id}`)
+  } catch (e) {
+    if (String(e.message).includes('404')) return
+    throw e
+  }
 }
 
 async function uploadAsset(ownerName, rel, filePath, name, repo, progress = null) {
