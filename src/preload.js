@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('nimbus', {
   createFolder: name => ipcRenderer.invoke('create-folder', name),
   deleteFolder: name => ipcRenderer.invoke('delete-folder', name),
   renameFolder: data => ipcRenderer.invoke('rename-folder', data),
+  refreshFromGithub: () => ipcRenderer.invoke('refresh-from-github'),
   downloadFolderZip: folderName => ipcRenderer.invoke('download-folder-zip', folderName),
   generateShareLink: data => ipcRenderer.invoke('generate-share-link', data),
   backupDownload: () => ipcRenderer.invoke('backup-download'),

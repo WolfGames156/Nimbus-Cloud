@@ -231,7 +231,7 @@ async function syncFiles() {
   if (btn.classList.contains('syncing')) return
   btn.classList.add('syncing')
   $('fileStatus').textContent = 'Syncing...'
-  const data = await call(() => window.nimbus.list())
+  const data = await call(() => window.nimbus.refreshFromGithub())
   if (data) { render(data); saveFileCache(data) }
   btn.classList.remove('syncing')
 }

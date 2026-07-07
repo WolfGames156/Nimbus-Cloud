@@ -244,7 +244,8 @@ function hashFile(filePath) {
   return h.digest('hex')
 }
 
-async function loadDb(ownerName) {
+async function loadDb(ownerName, forceRefresh) {
+  if (forceRefresh) memoryDb = null
   if (memoryDb) return memoryDb
   const local = loadLocalDb()
   if (local && local.files) { memoryDb = local; return local }
@@ -856,6 +857,13 @@ if (!gotTheLock) {
     safe('create-folder', createFolder)
     safe('delete-folder', deleteFolder)
     safe('rename-folder', renameFolder)
+    safe('refresh-from-github', async () => {
+      const s = requireSession()
+      memoryDb = null
+      const db = await loadDb(s.owner, true)
+      saveLocalDb(db)
+      return listFiles()
+    })
     safe('download-folder-zip', downloadFolderZip)
     safe('generate-share-link', generateShareLink)
     safe('backup-download', backupDownload)
