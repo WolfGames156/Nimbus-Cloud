@@ -180,39 +180,91 @@ async function deleteAsset(ownerName, id, repo) {
   }
 }
 
+async function getAllReleaseAssets(ownerName, repo, releaseId) {
+  const assets = []
+  let page = 1
+  while (true) {
+    const url = `https://api.github.com/repos/${ownerName}/${repo}/releases/${releaseId}/assets?per_page=100&page=${page}`
+    try {
+      const pageData = await gh('GET', url)
+      if (!pageData || !pageData.length) break
+      assets.push(...pageData)
+      if (pageData.length < 100) break
+      page++
+    } catch { break }
+  }
+  return assets
+}
+
 async function uploadAsset(ownerName, rel, filePath, name, repo, progress = null) {
-  const old = rel.assets.find(a => a.name === name)
-  if (old) await deleteAsset(ownerName, old.id, repo)
   const stat = fs.statSync(filePath)
   const url = new URL(`https://uploads.github.com/repos/${ownerName}/${repo}/releases/${rel.id}/assets?name=${encodeURIComponent(name)}`)
-  return await new Promise((resolve, reject) => {
-    const req = https.request({
-      method: 'POST',
-      hostname: url.hostname,
-      path: `${url.pathname}${url.search}`,
-      headers: {
-        Authorization: `Bearer ${storageToken()}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'Nimbus-GitCloud',
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': stat.size,
-      },
-    }, res => {
-      const chunks = []
-      res.on('data', chunk => chunks.push(chunk))
-      res.on('end', () => {
-        const body = Buffer.concat(chunks).toString()
-        if (res.statusCode < 200 || res.statusCode >= 300) return reject(new Error(`GitHub HTTP ${res.statusCode}: ${body}`))
-        resolve(body ? JSON.parse(body) : null)
+  try {
+    return await new Promise((resolve, reject) => {
+      const req = https.request({
+        method: 'POST',
+        hostname: url.hostname,
+        path: `${url.pathname}${url.search}`,
+        headers: {
+          Authorization: `Bearer ${storageToken()}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'Nimbus-GitCloud',
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': stat.size,
+        },
+      }, res => {
+        const chunks = []
+        res.on('data', chunk => chunks.push(chunk))
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString()
+          if (res.statusCode < 200 || res.statusCode >= 300) return reject(new Error(`GitHub HTTP ${res.statusCode}: ${body}`))
+          resolve(body ? JSON.parse(body) : null)
+        })
       })
+      req.on('error', reject)
+      const stream = fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 })
+      stream.on('data', chunk => { if (progress) progress(chunk.length) })
+      stream.on('error', reject)
+      stream.pipe(req)
     })
-    req.on('error', reject)
-    const stream = fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 })
-    stream.on('data', chunk => { if (progress) progress(chunk.length) })
-    stream.on('error', reject)
-    stream.pipe(req)
-  })
+  } catch (e) {
+    if (String(e.message).includes('already_exists')) {
+      const allAssets = await getAllReleaseAssets(ownerName, repo, rel.id)
+      const old = allAssets.find(a => a.name === name)
+      if (old) await deleteAsset(ownerName, old.id, repo)
+      // Retry
+      return await new Promise((resolve, reject) => {
+        const req2 = https.request({
+          method: 'POST',
+          hostname: url.hostname,
+          path: `${url.pathname}${url.search}`,
+          headers: {
+            Authorization: `Bearer ${storageToken()}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+            'User-Agent': 'Nimbus-GitCloud',
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': stat.size,
+          },
+        }, res => {
+          const chunks = []
+          res.on('data', chunk => chunks.push(chunk))
+          res.on('end', () => {
+            const body = Buffer.concat(chunks).toString()
+            if (res.statusCode < 200 || res.statusCode >= 300) return reject(new Error(`GitHub HTTP ${res.statusCode}: ${body}`))
+            resolve(body ? JSON.parse(body) : null)
+          })
+        })
+        req2.on('error', reject)
+        const stream2 = fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 })
+        stream2.on('data', chunk => { if (progress) progress(chunk.length) })
+        stream2.on('error', reject)
+        stream2.pipe(req2)
+      })
+    }
+    throw e
+  }
 }
 
 async function downloadAsset(ownerName, id, filePath, repo) {
