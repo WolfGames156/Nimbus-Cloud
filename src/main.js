@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, protocol } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, protocol, clipboard } = require('electron')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -676,16 +676,25 @@ async function generateShareLink(_, { filename, folder, isFolder }) {
     await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/.nimbuskeep`, JSON.stringify({ message: 'init', content: Buffer.from('Nimbus Shares').toString('base64') }), { 'Content-Type': 'application/json' })
   }
 
-  // Upload ZIP as git commit via Contents API
-  const zipContent = fs.readFileSync(zipPath).toString('base64')
-  const zipName = encodeURIComponent(filename + '.zip')
-  const repoPath = `shares/${shareId}/${zipName}`
-  await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/${repoPath}`, JSON.stringify({ message: `Share ${shareId}: ${filename}`, content: zipContent }), { 'Content-Type': 'application/json' })
+  // EnsureInitialCommit
+  try {
+    await gh('GET', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/.nimbuskeep`)
+  } catch {
+    await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/.nimbuskeep`, JSON.stringify({ message: 'init', content: Buffer.from('Nimbus Shares').toString('base64') }), { 'Content-Type': 'application/json' })
+  }
 
-  // Upload metadata as git commit
+  // Upload ZIP as Release asset (no size limit)
+  const shareRel = await release(s.owner, 'nimbus-shares', shareRepo)
+  const zipAssetName = `share-${shareId}.zip`
+  await uploadAsset(s.owner, shareRel, zipPath, zipAssetName, shareRepo)
+
+  // Store metadata as git commit (small file, accessible via raw.githubusercontent.com)
   const meta = { id: shareId, filename: filename + '.zip', size: fs.statSync(zipPath).size, owner: s.owner, createdAt: Date.now() }
-  await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/shares/${shareId}/meta.json`, JSON.stringify({ message: `Share ${shareId} metadata`, content: Buffer.from(JSON.stringify(meta, null, 2)).toString('base64') }), { 'Content-Type': 'application/json' })
+  await gh('PUT', `https://api.github.com/repos/${s.owner}/${shareRepo}/contents/shares/${shareId}/meta.json`,
+    JSON.stringify({ message: `Share ${shareId} metadata`, content: Buffer.from(JSON.stringify(meta, null, 2)).toString('base64') }),
+    { 'Content-Type': 'application/json' })
 
+  const downloadUrl = `https://github.com/${s.owner}/${shareRepo}/releases/download/nimbus-shares/${zipAssetName}`
   return `https://nimbus-gitcloud.vercel.app/share/${s.owner}/${shareId}`
 }
 
@@ -888,6 +897,7 @@ if (!gotTheLock) {
     safe('win-minimize', async () => { if (win) win.minimize() })
     safe('win-maximize', async () => { if (win) { win.isMaximized() ? win.unmaximize() : win.maximize() } })
     safe('win-close', async () => { if (win) win.close() })
+    safe('clipboard-write', async (_, text) => { clipboard.writeText(text); return true })
     
     loadOAuthToken()
     if (oauthToken) initSessionFromToken(oauthToken).catch(() => {})

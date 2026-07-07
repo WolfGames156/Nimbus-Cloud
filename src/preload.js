@@ -34,4 +34,5 @@ contextBridge.exposeInMainWorld('nimbus', {
   winMinimize: () => ipcRenderer.invoke('win-minimize'),
   winMaximize: () => ipcRenderer.invoke('win-maximize'),
   winClose: () => ipcRenderer.invoke('win-close'),
+  clipboardWrite: text => ipcRenderer.invoke('clipboard-write', text),
 })

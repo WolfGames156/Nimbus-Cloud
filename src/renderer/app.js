@@ -314,7 +314,7 @@ async function shareFolder(encodedName) {
   showToast('Creating share link...')
   const url = await call(() => window.nimbus.generateShareLink({ filename: folderName, folder: '', isFolder: true }), null)
   hideToast()
-  if (url) { try { await navigator.clipboard.writeText(url) } catch {}; alert('Share link copied!\n' + url) }
+  if (url) { await window.nimbus.clipboardWrite(url); alert('Share link copied!\n' + url) }
 }
 
 async function shareFile(encodedName, encodedFolder) {
@@ -323,7 +323,7 @@ async function shareFile(encodedName, encodedFolder) {
   showToast('Creating share link...')
   const url = await call(() => window.nimbus.generateShareLink({ filename: name, folder, isFolder: false }), null)
   hideToast()
-  if (url) { try { await navigator.clipboard.writeText(url) } catch {}; alert('Share link copied!\n' + url) }
+  if (url) { await window.nimbus.clipboardWrite(url); alert('Share link copied!\n' + url) }
 }
 
 async function upload() {
